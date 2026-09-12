@@ -49,9 +49,15 @@ weights/sam-vit-base/
 
 `MIN_IMAGE_SIDE = 16`, `MAX_IMAGE_SIDE = 4096`, `MAX_PROMPTS = 16` points; one object per call; masks are binarised at logit `MASK_THRESHOLD = 0.0`. `iou_scores` is the model's own uncalibrated estimate and can exceed 1.0. See `MODEL_CARD.md` for the measured CPU timings and the candidate-selection rule.
 
+## Tutorials
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/kurtvalcorza/sam-vit-segmentation-pipeline/blob/main/tutorials/sam_vit_segmentation_colab.ipynb)
+
+`tutorials/sam_vit_segmentation_colab.ipynb` is declared `TASK-INFERENCE` under DIMER Notebook Specification 1.0. Its default path draws a 320×240 scene in code (no download), clicks once inside its rectangle, surfaces the image/prompt ceilings and the one-object-per-call contract, resolves the pinned model through the package's staging and verification path, segments through `SAMViTSegmentationPipeline.segment`, reads the model-predicted `iou_scores` as uncalibrated estimates that can exceed 1.0, reports `mask_iou` against the drawn rectangle as sanity evidence only (no mIoU), and exports the best mask PNG, an overlay PNG and JSON provenance. BYOD is optional and gated off by default. See `tutorials/README.md` for the registry and `docs/release-verification.md` for the release gate.
+
 ## Release status
 
-**Candidate / source-complete.** The pipeline package, offline unit tests, a local CPU smoke run, and `MODEL_CARD.md` (MODEL_CARD_SPEC 1.1) exist. No tutorial notebook ships yet; nothing here is clean-runtime notebook evidence.
+**Candidate.** Static/unit checks do not constitute clean-runtime notebook evidence. The clean-runtime run of the tutorial is pending; complete `docs/release-verification.md` against the exact release revision before calling the notebook release-grade. See `STATUS.md`.
 
 ## Documentation
 
