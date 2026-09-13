@@ -3,6 +3,8 @@ license: apache-2.0
 model_card_spec: "1.1"
 pipeline_tag: mask-generation
 base_model: facebook/sam-vit-base
+date_published: "2023-04-19"
+date_published_source: "Hugging Face Hub repository creation date of the exact hosted checkpoint (`createdAt`, https://huggingface.co/api/models/facebook/sam-vit-base)"
 ---
 
 # SAM ViT-B (DIMER package v0.1.0) — Promptable Image Segmentation (Inference)
@@ -11,7 +13,6 @@ base_model: facebook/sam-vit-base
 [![Upstream GitHub](https://img.shields.io/badge/Upstream%20GitHub-facebookresearch%2Fsegment--anything-181717?style=flat&logo=github&logoColor=white)](https://github.com/facebookresearch/segment-anything)
 [![arXiv Paper](https://img.shields.io/badge/arXiv-2304.02643-b31b1b.svg)](https://arxiv.org/abs/2304.02643)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Pipeline](https://img.shields.io/badge/Pipeline-sam--vit--segmentation--pipeline-2ea44f?style=flat&logo=github)](https://github.com/kurtvalcorza/sam-vit-segmentation-pipeline)
 
 > [!WARNING]
 > ⚠️ **Provided for research, training, and evaluation purposes only.** Model weights are redistributed unmodified under their upstream license, which controls your use, including any commercial use or redistribution; the accompanying code and notebooks are released under this repository's license. All of it is supplied **"as is"**, without warranty of any kind, and has not been validated for production, clinical, or safety-critical use. Running the notebooks downloads third-party weights and datasets governed by their own licenses and consumes compute on your own Colab/Kaggle account. To the maximum extent permitted by law, the maintainers of this repository and the DIMER platform accept no liability for any damages arising from their use. Hosting implies no affiliation with or endorsement by the original authors.
@@ -28,7 +29,7 @@ This pipeline provides a ready-to-run interactive Google Colab notebook that exe
 
 ---
 
-###### Description
+#### Description
 
 `facebook/sam-vit-base` is the Transformers-format release of the ViT-B checkpoint of the Segment Anything Model from Meta AI's *Segment Anything* (Kirillov et al., ICCV 2023, arXiv:2304.02643), pinned here to revision `70c1a07f894ebb5b307fd9eaaee97b9dfc16068f`. The snapshot `config.json` declares `SamModel` with three modules: a ViT-B image encoder (12 layers, `hidden_size` 768, 16-px patches over a 1024×1024 input, windowed attention with `window_size` 14 and global attention at layers 2, 5, 8 and 11, relative position embeddings, 256 output channels), a prompt encoder for points and boxes (`hidden_size` 256, 4 point embeddings, a 64×64 image-embedding grid), and a two-layer two-way Transformer mask decoder with an IoU-prediction head (`iou_head_depth` 3) and `num_multimask_outputs` 3. At inference the model embeds the image once, encodes the caller's point clicks and/or box, and decodes one or three candidate masks with a predicted IoU each; no adaptation happens. This is the original 2023 SAM; the sibling `sam2-segmentation-pipeline` packages SAM 2.1 Hiera-Small, whose Hiera backbone and memory modules also cover video, and the two are not benchmarked against each other here. This repository exposes the prompted image path through `SamModel` + `SamProcessor` and adds packaging: `verify_snapshot` and `stage_missing_files` (manifest digest checking and fresh-clone staging), `SAMViTSegmentationPipeline.from_pretrained` (verified local loading, `trust_remote_code=False`), `validate_image`/`validate_prompts`/`segment` (image and prompt validation, boolean masks at input resolution), and `mask_iou`.
 
