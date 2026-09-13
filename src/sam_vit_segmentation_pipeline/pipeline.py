@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -176,6 +176,159 @@ def validate_prompts(
     return clean_points, clean_labels, clean_box
 
 
+INPUT_SCHEMA: dict[str, Any] = {
+    "input": (
+        "one PIL.Image.Image (any mode, converted to RGB) plus one object's prompts: point clicks "
+        "and/or one xyxy box"
+    ),
+    "image_side_px": [MIN_IMAGE_SIDE, MAX_IMAGE_SIDE],
+    "points": [1, MAX_PROMPTS],
+    "point_labels": "one per point, 1 = foreground and 0 = background",
+    "box": "at most one [x0, y0, x1, y1] inside the image with x0 < x1 and y0 < y1",
+    "objects_per_call": 1,
+    "multimask_outputs": NUM_MULTIMASK_OUTPUTS,
+    "preprocessing": (
+        "image converted to RGB; the processor resizes the longest edge to 1024 and pads to 1024x1024; "
+        "returned masks are up-sampled "
+        f"to the input resolution and binarised at logit MASK_THRESHOLD={MASK_THRESHOLD}"
+    ),
+}
+
+
+def _check_inputs(
+    image: Any,
+    points: Any,
+    point_labels: Any,
+    box: Any,
+    multimask: Any,
+) -> tuple[Image.Image, list[list[float]] | None, list[int] | None, list[float] | None]:
+    """Raise TypeError/ValueError naming the first violated ceiling; return the cleaned request.
+
+    ``segment`` and ``validate_inputs`` both route through this function so their acceptance
+    criteria cannot diverge.
+    """
+    rgb = validate_image(image)
+    clean_points, clean_labels, clean_box = validate_prompts(
+        rgb.width, rgb.height, points, point_labels, box
+    )
+    if not isinstance(multimask, bool):
+        raise TypeError("multimask must be a bool")
+    return rgb, clean_points, clean_labels, clean_box
+
+
+def validate_inputs(
+    image: Image.Image,
+    *,
+    points: Sequence[Sequence[float]] | None = None,
+    point_labels: Sequence[int] | None = None,
+    box: Sequence[float] | None = None,
+    multimask: bool = True,
+    names: Sequence[str] | None = None,
+) -> dict[str, Any]:
+    """Validation stage: return the input manifest (schema, observations, request, verdict).
+
+    Rejection is reported by raising exactly as ``segment`` would; a caller that wants the finding
+    recorded catches the exception and stores ``str(exc)`` under ``findings``.
+    """
+    _rgb, clean_points, clean_labels, clean_box = _check_inputs(
+        image, points, point_labels, box, multimask
+    )
+    if names is not None and len(names) != 1:
+        raise ValueError("names must have exactly one entry (segment takes one image)")
+    return {
+        "schema": dict(INPUT_SCHEMA),
+        "inputs": [
+            {
+                "id": names[0] if names else "image-0",
+                "mode": image.mode,
+                "size": list(image.size),
+                "n_points": 0 if clean_points is None else len(clean_points),
+                "has_box": clean_box is not None,
+            }
+        ],
+        "points": clean_points,
+        "point_labels": clean_labels,
+        "box": clean_box,
+        "multimask": multimask,
+        "verdict": "accepted",
+        "findings": [],
+        "model_id": MODEL_ID,
+        "model_revision": MODEL_REVISION,
+    }
+
+
+def evaluation_report(
+    result: Mapping[str, Any],
+    reference_mask: Any = None,
+    *,
+    sample_kind: str = "synthetic",
+) -> dict[str, Any]:
+    """Evaluation stage: a machine-readable report even when nothing is measurable.
+
+    With a boolean ``reference_mask`` of the same shape as the returned masks the report carries one
+    ``mask_iou`` entry per candidate as sample-sanity geometry evidence; without one the verdict is
+    ``not-measurable`` and the report says what labelled data would make the task measurable.
+    """
+    masks = np.asarray(result["masks"])
+    scores = [float(v) for v in result["iou_scores"]]
+    best = int(np.argmax(scores)) if scores else None
+    base = {
+        "task": "promptable single-object image segmentation (point and/or box prompts)",
+        "decision_rule": (
+            "keep the candidate with the highest model-predicted IoU; the pipeline ships no "
+            "acceptance threshold and does not choose for the caller"
+        ),
+        "score_semantics": (
+            "iou_scores are the model's own uncalibrated predicted IoU for each candidate, not a "
+            "measured overlap and not a probability; the regression head is unclipped, so a value "
+            "may exceed 1.0"
+        ),
+        "sample_kind": sample_kind,
+        "n_masks": int(masks.shape[0]) if masks.ndim == 3 else 0,
+        "best_candidate": best,
+        "iou_scores_model_predicted": scores,
+        "mask_areas_px": [int(mask.sum()) for mask in masks] if masks.ndim == 3 else [],
+        "baselines": [],
+        "model_id": MODEL_ID,
+        "model_revision": MODEL_REVISION,
+    }
+    if reference_mask is None:
+        return {
+            **base,
+            "metrics": [],
+            "verdict": "not-measurable",
+            "reason": "no ground-truth mask was supplied for the evaluated image",
+            "needs": (
+                "hand-labelled boolean masks for the prompted objects on your own images, scored with "
+                "mask_iou per object and averaged into a mean IoU over a held-out set; no labelled "
+                "mask set ships with this repository"
+            ),
+        }
+    reference = np.asarray(reference_mask)
+    return {
+        **base,
+        "metrics": [
+            {
+                "id": "mask_iou",
+                "candidate": index,
+                "value": mask_iou(masks[index], reference),
+                "selected": index == best,
+                "estimation": "one reference mask on a single scene, no dispersion estimate",
+            }
+            for index in range(masks.shape[0])
+        ],
+        "reference_area_px": int(reference.sum()),
+        "verdict": "sample-sanity",
+        "reason": (
+            "one reference mask on one tutorial sample; geometry sanity evidence, not a segmentation "
+            "benchmark"
+        ),
+        "needs": (
+            "a labelled mask set from the deployment domain for any mean-IoU or boundary-quality claim"
+        ),
+    }
+
+
 @dataclass
 class SAMViTSegmentationPipeline:
     """Promptable image segmentation (points/box -> masks) over the pinned SAM ViT-B checkpoint.
@@ -247,11 +400,9 @@ class SAMViTSegmentationPipeline:
         multimask: bool = True,
     ) -> dict[str, Any]:
         """Segment one object; returns K boolean masks (K = 3 with multimask, else 1) at input resolution."""
-        rgb = validate_image(image)
-        clean = validate_prompts(rgb.width, rgb.height, points, point_labels, box)
-        clean_points, clean_labels, clean_box = clean
-        if not isinstance(multimask, bool):
-            raise TypeError("multimask must be a bool")
+        rgb, clean_points, clean_labels, clean_box = _check_inputs(
+            image, points, point_labels, box, multimask
+        )
         masks, iou_scores = self._runner(rgb, clean_points, clean_labels, clean_box, multimask)
         masks = np.asarray(masks)
         expected = (NUM_MULTIMASK_OUTPUTS if multimask else 1, rgb.height, rgb.width)

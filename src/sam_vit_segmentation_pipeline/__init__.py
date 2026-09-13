@@ -1,5 +1,6 @@
 from .pipeline import (
     DEFAULT_WEIGHTS_DIR,
+    INPUT_SCHEMA,
     MAX_IMAGE_SIDE,
     MAX_PROMPTS,
     MIN_IMAGE_SIDE,
@@ -9,13 +10,16 @@ from .pipeline import (
     MODEL_REVISION,
     NUM_MULTIMASK_OUTPUTS,
     SAMViTSegmentationPipeline,
+    evaluation_report,
     mask_iou,
     stage_missing_files,
+    validate_inputs,
     verify_snapshot,
 )
 
 __all__ = [
     "DEFAULT_WEIGHTS_DIR",
+    "INPUT_SCHEMA",
     "MAX_IMAGE_SIDE",
     "MAX_PROMPTS",
     "MIN_IMAGE_SIDE",
@@ -25,7 +29,9 @@ __all__ = [
     "MODEL_REVISION",
     "NUM_MULTIMASK_OUTPUTS",
     "SAMViTSegmentationPipeline",
+    "evaluation_report",
     "mask_iou",
     "stage_missing_files",
+    "validate_inputs",
     "verify_snapshot",
 ]

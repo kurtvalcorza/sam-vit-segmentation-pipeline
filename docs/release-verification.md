@@ -1,10 +1,10 @@
 # Release verification
 
-`tutorials/sam_vit_segmentation_colab.ipynb` (`TASK-INFERENCE`) is a **release candidate** until
-the exact notebook revision has executed top-to-bottom in a clean supported runtime. Unit tests,
-JSON validation, code-cell compilation, and `tools/validate_release_assets.py` are necessary
-checks but are **not** runtime evidence under DIMER Notebook Specification 1.0. This file is
-the durable release-gate record for the notebook.
+`tutorials/sam_vit_segmentation_colab.ipynb` (`TASK-INFERENCE`, **standalone** carrier) is a **release
+candidate** until the exact notebook revision has executed top-to-bottom in a clean supported
+runtime. Unit tests, JSON validation, code-cell compilation, the generator parity checks and
+`tools/validate_release_assets.py` are necessary checks but are **not** runtime evidence under DIMER
+Notebook Specification 1.1. This file is the durable release-gate record for the notebook.
 
 ## Automatic coverage (static, every pull request)
 
@@ -14,33 +14,48 @@ CI runs `tools/validate_release_assets.py`, which checks:
   persisted outputs or execution counts; no unresolved placeholder markers; every code cell
   is preceded by an explanatory markdown cell;
 - exactly one tutorial notebook, named in `tutorials/README.md` with its `TASK-INFERENCE`
-  profile and the notebook-spec version; `metadata.dimer` declares that profile and spec `1.0`;
-- the fresh-runtime bootstrap (clone by canonical URL, `DIMER_TUTORIAL_REF`, detached checkout of
-  the requested revision, restart-on-stale-import guard) and the recorded `REPO_SHA` in exports;
-- `MODEL_ID`/`MODEL_REVISION` are imported from the package rather than hard-coded, the revision is
-  a 40-hex immutable commit, and the same identity string appears in `README.md`,
-  `MODEL_CARD.md`, and `docs/WEIGHTS.md` with no stray revisions;
+  profile, the notebook-spec version and the standalone carrier; `metadata.dimer` declares that
+  profile, spec `1.1`, `standalone: true` and `generated_from` (repository, revision, module
+  SHA-256, generator);
+- the standalone carrier (ST1–ST6, PAR1–PAR3): no clone, repository install or repository import on
+  the primary path; exactly one cell tagged `embedded_module` equal to
+  `src/sam_vit_segmentation_pipeline/pipeline.py` after the generator's documented rewrites; the
+  inline `MANIFEST` equal to the committed snapshot manifest and the inline `PINS` equal to the
+  `pyproject.toml` runtime pins; the notebook byte-identical (on LF) to `tools/build_notebook.py`
+  output for its recorded revision; the pinned-install cell with its restart-on-stale-import guard;
+  `NOTEBOOK_SOURCE` recorded in exports;
+- `MODEL_ID`/`MODEL_REVISION` are bound only in the carried module cell (and repeated in the inline
+  manifest, which the notebook asserts against the module before fetching), the revision is a 40-hex
+  immutable commit, and the same identity string appears in `README.md`, `MODEL_CARD.md`, and
+  `docs/WEIGHTS.md` with no stray revisions;
 - the profile-specific public-API calls (`stage_missing_files`, `verify_snapshot`,
-  `SAMViTSegmentationPipeline.from_pretrained(weights_dir=...)`, `segment(image, points=..., point_labels=..., multimask=...)`, `mask_iou`), the ceiling print
-  (`MIN_IMAGE_SIDE`, `MAX_IMAGE_SIDE`, `MAX_PROMPTS`, `NUM_MULTIMASK_OUTPUTS`), the exports, the learner-facing statements (one object per call, model-predicted uncalibrated `iou_scores` that can exceed 1.0, no mIoU, automatic mask generation out of scope) and the
-  gated-off BYOD default listed in the validator; forbidden patterns (credential-in-URL, direct
-  `from transformers import` / `SamModel` / `SamProcessor` / `SamAutomaticMaskGenerator` / `from huggingface_hub import` use that bypasses the pipeline,
+  `SAMViTSegmentationPipeline.from_pretrained(weights_dir=...)`, `validate_inputs`, `segment`,
+  `evaluation_report`), the ceiling print (`MIN_IMAGE_SIDE`, `MAX_IMAGE_SIDE`, `MAX_PROMPTS`,
+  `NUM_MULTIMASK_OUTPUTS`, `MASK_THRESHOLD`), the exports, the learner-facing statements
+  (model-predicted uncalibrated `iou_scores` from an unclipped head that may exceed 1.0, the argmax
+  decision rule, no shipped threshold, no mIoU, IoU as sanity check, capability exclusions, the
+  troubleshooting block) and the gated-off BYOD default listed in the validator; forbidden patterns
+  (credential-in-URL, any `git clone` / `github.com` / repository import on the primary path, a
+  mutable `revision='main'`, direct `from transformers import` / `SamModel` / `SamProcessor` /
+  `post_process_masks(` / `from huggingface_hub import` use **outside the carried module cell**,
   `trust_remote_code=True`, `pickle.load`, `torch.load(`, `extractall(`);
 - `STATUS.md`, `README.md` and `tutorials/README.md` agree on one release-status token and no
   document makes an unsupported release-grade, production-readiness or benchmark claim;
 - `MODEL_CARD.md` front matter (`model_card_spec: "1.1"`), single H1, required heading order, and
   immutable provenance.
 
-CI also installs the pinned CPU-only torch wheel plus `transformers`, `safetensors`, `huggingface-hub`, `numpy` and `pillow`, runs `ruff` and the
-offline unit suite (`tests/test_pipeline.py`, injected runner, no weights). These are
-source/provenance and unit checks. They are **not** execution evidence.
+CI also installs the pinned CPU-only torch wheel plus `transformers`, `safetensors`,
+`huggingface-hub`, `numpy` and `pillow`, runs `ruff check src tests tools`,
+`tools/build_notebook.py --check`, and the offline unit suite (`tests/test_pipeline.py`,
+`tests/test_role_helpers.py`, `tests/test_notebook_parity.py`; injected runner, no weights). These
+are source/provenance and unit checks. They are **not** execution evidence.
 
 ## Executor paths
 
 | Path | Runtime | Role |
 |---|---|---|
 | Google Colab (supported user path) | Colab CPU runtime (CUDA used automatically when present) | The runtime the tutorial is written for; a clean top-to-bottom run here is promotion evidence |
-| Kaggle CLI kernel | Kaggle CPU kernel, Python 3.12 image | Reproducible clean-room executor of the same class; the notebook is pushed verbatim plus one leading shim cell that provides `google.colab`, sets `DIMER_TUTORIAL_REF`, and chdirs to a scratch directory so the bootstrap clones the candidate |
+| Kaggle CLI kernel | Kaggle CPU kernel, Python 3.12 image | Reproducible clean-room executor of the same class; the notebook is pushed verbatim plus one leading shim cell that provides `google.colab` and chdirs to a scratch directory (**no repository checkout is needed — the notebook is standalone**) |
 | Local Windows-venv harness (pre-flight only) | Workstation, sequential cell executor with a `google.colab` shim, `CUDA_VISIBLE_DEVICES=-1` | Builder pre-flight to catch defects before spending cloud runs; **not** a supported runtime and not promotion evidence |
 
 ## Supported release verification procedure
@@ -49,21 +64,42 @@ Before changing the registry status from `Candidate` to `Release-grade`:
 
 1. resolve the exact PR/commit head under review and confirm static CI is green;
 2. open that exact notebook revision in a new CPU (or CUDA) runtime (Colab, or the Kaggle
-   executor above) with `DIMER_TUTORIAL_REF` set to the candidate commit and a clean model cache;
+   executor above) with **no repository checkout** and a clean model cache;
 3. run the notebook top-to-bottom without editing implementation cells (form parameters at their
-   defaults for the sample path: `USE_BYOD = False`, `POINT_X = 90`, `POINT_Y = 120`, `MULTIMASK = True`);
-4. verify that Section 1 reports `repository_revision` equal to the candidate commit and that the
-   installed core package versions equal the `pyproject.toml` pins;
+   defaults for the sample path: `USE_BYOD = False`, `POINT_X = 90`, `POINT_Y = 120`,
+   `MULTIMASK = True`);
+4. verify that Section 1 reports `NOTEBOOK_SOURCE.repository_revision` equal to the revision recorded
+   in `metadata.dimer.generated_from` and that the installed core package versions equal the inline
+   `PINS` (= `pyproject.toml`);
 5. verify every default-path stage completes:
-   - fresh bootstrap from GitHub at the candidate revision;
-   - synthetic 320×240 scene drawn in code with its RGB SHA-256 printed, click `[[90, 120]]` label `[1]`, reference mask area 12,221 px, and the ceilings (`MIN_IMAGE_SIDE` 16, `MAX_IMAGE_SIDE` 4096, `MAX_PROMPTS` 16, `NUM_MULTIMASK_OUTPUTS` 3) surfaced;
-   - pinned `facebook/sam-vit-base` acquisition at the immutable revision through the package:
-     `stage_missing_files(WEIGHTS_DIR, allow_download=True)` reports `['model.safetensors']` on a
-     clean runtime, `verify_snapshot` returns its summary dict (4 files, 374,993,239 bytes), and `from_pretrained(weights_dir=WEIGHTS_DIR)`
-     loads from the verified directory with nothing unexpected on stderr (the card-pass smoke wrote nothing);
-   - `segment` returning `masks` of shape `(3, 240, 320)` bool and three `iou_scores`; record the scores (including any above 1.0), the best candidate's area and `mask_iou` against the drawn rectangle (the card-pass CPU smoke returned `[0.955, 1.012, 0.979]`, areas `[17129, 12216, 11887]` px, argmax candidate 1, IoU 1.000 at three decimals; a materially different result is a finding to record, not a failure by itself, because no metric is asserted);
-   - `outputs/sam_vit_segmentation_result.json`, `outputs/sam_vit_segmentation_mask.png` and `outputs/sam_vit_segmentation_overlay.png` written with repository SHA, model revision,
-     runtime versions and device;
+   - pinned runtime installed from the inline `PINS` with no GitHub access;
+   - the carried module cell executes (defines `SAMViTSegmentationPipeline`, `validate_inputs`,
+     `evaluation_report`, `mask_iou`, `validate_image`, `validate_prompts`, `verify_snapshot`,
+     `stage_missing_files`) with no import of the repository package;
+   - synthetic 320×240 scene drawn in code with its RGB SHA-256 printed, click `[[90, 120]]` label
+     `[1]`, reference mask area 12,221 px, and the ceilings (`MIN_IMAGE_SIDE` 16, `MAX_IMAGE_SIDE`
+     4096, `MAX_PROMPTS` 16, `NUM_MULTIMASK_OUTPUTS` 3, `MASK_THRESHOLD` 0.0) surfaced;
+   - pinned `facebook/sam-vit-base` acquisition at the immutable revision through the carried module:
+     the inline `MANIFEST` is asserted against the module identity and written to
+     `weights/sam-vit-base/`, `stage_missing_files(WEIGHTS_DIR, allow_download=True)` reports all four
+     manifest entries on a clean runtime, `verify_snapshot` returns its summary dict, and
+     `from_pretrained(weights_dir=WEIGHTS_DIR)` loads from the verified directory with no loader
+     notice on stderr (the upstream `pytorch_model.bin` and TensorFlow weights are not in the
+     manifest and must not be staged);
+   - `validate_inputs` writes `outputs/sam_vit_segmentation_input_manifest.json` (verdict `accepted`,
+     one click and no box, one recorded rejection finding from the click-outside-image probe);
+   - `segment` returning `masks` of shape `(3, 240, 320)` bool and three `iou_scores`; record the
+     scores and each candidate's area (the card-pass CPU smoke returned `[0.955, 1.012, 0.979]` with
+     areas `[17129, 12216, 11887]` px and argmax candidate 1 — note the best score exceeds 1.0; a
+     materially different result is a finding to record, not a failure by itself, because no metric is
+     asserted);
+   - `evaluation_report` writes `outputs/sam_vit_segmentation_evaluation_report.json` with verdict
+     `sample-sanity` and one `mask_iou` entry per candidate against the drawn rectangle (the smoke run
+     measured 1.000 at three decimals for the selected candidate); `not-measurable` on BYOD, stated as
+     such;
+   - `outputs/sam_vit_segmentation_result.json`, `outputs/sam_vit_segmentation_mask.png` and
+     `outputs/sam_vit_segmentation_overlay.png` written with `NOTEBOOK_SOURCE`, model revision, model
+     licence, runtime versions and device;
 6. verify the exports exist and the interpretation section matches the observed path;
 7. record the notebook Git blob id, commit, runtime (platform, Python, PyTorch, Transformers, device),
    model identifier and immutable revision, whether the model cache was clean, outcome, produced
@@ -89,9 +125,14 @@ they are measurements for the stated runtime, not general estimates.
 
 No clean-runtime execution of the notebook has been recorded yet; the run is **pending** and queued
 to the GPU lane. Static validation (`tools/validate_release_assets.py`), nbformat validation, a
-`compile()` sweep over every code cell, and the offline unit suite passed on the tutorial source at
-the candidate revision, which is necessary but not sufficient. The registry status remains
-**Candidate** until a reviewer confirms a recorded run against the notebook blob under review and
-an integrator promotes it; promotion is not performed by the builder. Facts a reviewer should weigh:
-`stage_missing_files` was exercised only with an injected downloader in the unit suite (the real
-`hf_hub_download` fetch into the snapshot directory has not been executed), and the card pass executed `segment` only on CPU in the Windows venv from a complete local snapshot (returns/L7: CUDA path and Hub path not executed), so the clean run will be the first real execution of the staging path; the CPU inference path against real weights was executed once locally (card Runtime: 3.77 s load, 2.93 s per click prompt on 320×240).
+`compile()` sweep over every code cell, the generator parity checks (`--check` OK) and the offline
+unit suite passed on the tutorial source at the candidate revision, which is necessary but not
+sufficient. The registry status remains **Candidate** until a reviewer confirms a recorded run
+against the notebook blob under review and an integrator promotes it; promotion is not performed by
+the builder. Facts a reviewer should weigh: `stage_missing_files` was exercised only with an injected
+downloader in the unit suite (the real `hf_hub_download` fetch of `model.safetensors` into the
+snapshot directory has not been executed); the card pass executed `segment` only on CPU in the
+Windows venv (returns/L7: CUDA path not executed); and **the standalone carrier itself — executing
+the carried module cell in a runtime that has no repository checkout — has been validated statically
+only (parity PASS) and never run**, so the clean run will be the first execution of the standalone
+path and of the staging path.

@@ -1,0 +1,294 @@
+"""Per-repository template for tools/build_notebook.py (NOTEBOOK_SPEC 1.1 §3.6 standalone carrier).
+
+Only the task-specific prose and stage cells live here. Runtime install, the embedded pipeline
+module, and the model pin/stage/verify cells are produced by the generator from repository
+sources so they cannot drift from the package.
+"""
+# ruff: noqa: E501  -- markdown prose and code-cell text are kept on single lines for readable rendering
+
+TEMPLATE = {
+    "package": "sam_vit_segmentation_pipeline",
+    "repo_name": "sam-vit-segmentation-pipeline",
+    "stem": "sam_vit_segmentation",
+    "notebook_name": "sam_vit_segmentation_colab.ipynb",
+    "profile": "TASK-INFERENCE",
+    "pipeline_class": "SAMViTSegmentationPipeline",
+    "weights_key": "sam-vit-base",
+    "runtime_imports": ["torch", "transformers"],
+    "title": "SAM ViT-B — DIMER promptable image segmentation tutorial (standalone)",
+    "badges": [
+        (
+            "GitHub",
+            "https://img.shields.io/badge/GitHub-181717?style=flat&logo=github&logoColor=white",
+            "https://github.com/kurtvalcorza/sam-vit-segmentation-pipeline",
+        ),
+        (
+            "Open In Colab",
+            "https://colab.research.google.com/assets/colab-badge.svg",
+            "https://colab.research.google.com/github/kurtvalcorza/sam-vit-segmentation-pipeline/blob/main/tutorials/sam_vit_segmentation_colab.ipynb",
+        ),
+        (
+            "Hugging Face",
+            "https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-facebook%2Fsam--vit--base-ffcc4d?style=flat",
+            "https://huggingface.co/facebook/sam-vit-base",
+        ),
+        (
+            "Upstream",
+            "https://img.shields.io/badge/Upstream-facebookresearch%2Fsegment--anything-181717?style=flat&logo=github&logoColor=white",
+            "https://github.com/facebookresearch/segment-anything",
+        ),
+        ("arXiv", "https://img.shields.io/badge/arXiv-2304.02643-b31b1b.svg", "https://arxiv.org/abs/2304.02643"),
+    ],
+    "capability": "promptable image segmentation (point and/or box prompts → masks for one object) using the pinned `facebook/sam-vit-base` weights (SAM v1, ViT-B)",
+    "intro": (
+        "At inference the image's longest edge is resized to 1024 px and padded to 1024×1024, then encoded once by a "
+        "ViT-B image encoder; the prompt encoder embeds your clicks (label 1 = foreground, 0 = background) and/or one "
+        "xyxy box, and the mask decoder returns up to three candidate masks at 256×256, which the pipeline up-samples "
+        "to the input resolution (stripping the padding) and binarises at logit 0, together with the model's own "
+        "predicted IoU for each candidate. **No adaptation occurs:** no training, "
+        "fine-tuning, in-context conditioning, or preprocessing fitting happens in this notebook — the upstream "
+        "checkpoint supplies the weights and processor, and the carried pipeline module adds snapshot verification, "
+        "image and prompt validation with named ceilings, a single-object-per-call contract, a fixed output contract and "
+        "the `mask_iou`, `validate_inputs` and `evaluation_report` helpers. This is the original 2023 SAM; the sibling "
+        "`sam2-segmentation-pipeline` packages SAM 2.1 with the same contract, and the two are not compared here. The "
+        "default sample is a synthetic scene drawn in code; the IoU reported for it is sanity evidence against a shape "
+        "you drew, not a benchmark claim.\n\n"
+        "**No load notice is expected.** The card-pass smoke wrote nothing to stderr during the load, so Section 3 "
+        "should print only the dictionaries it is asked for. A warning or an error there is a real signal."
+    ),
+    "learning_objectives": (
+        "install the pinned runtime, read what the carried pipeline module guarantees, resolve and digest-verify the "
+        "immutable upstream model revision, draw a "
+        "synthetic scene with a known object, validate the image and prompts into an input manifest through the "
+        "pipeline's own validation stage, segment one object from a click through the public API, read the candidate "
+        "masks and their uncalibrated model-predicted IoU scores correctly (including why a score can exceed 1.0), "
+        "produce an evaluation report that is "
+        "`sample-sanity` with `mask_iou` only when a reference mask exists and `not-measurable` otherwise, exercise an "
+        "optional BYOD path, and export the mask plus machine-readable provenance."
+    ),
+    "exclusions": (
+        "automatic \"segment everything\" mask generation (the upstream grid-prompt pipeline is not wrapped), text "
+        "prompts (see the sibling Grounding DINO pipeline for boxes from text), mask-input prompts, several objects in "
+        "one call, semantic class labels, video, mIoU evaluation against labelled masks, or any training. The repository "
+        "exposes none of these."
+    ),
+    "prerequisites": [
+        "- **Runtime:** a fresh supported runtime (Google Colab or Jupyter, Python 3.12). The default path runs on CPU and uses CUDA automatically when available; inference is float32 on both. CPU is adequate: the repository's model card records 3.77 s to load (after a 0.21 s manifest verification) and 2.93 s for the click prompt on the 320×240 synthetic scene in the Windows venv (Intel Core Ultra 9 275HX); the encoder cost is fixed by the 1024×1024 working size, so image resolution only changes the size of the returned masks (a 4096×4096 box prompt took 3.11 s in the same smoke). The pinned `torch==2.14.0` install and the 375 MB checkpoint are the large downloads of the run.",
+        "- **Knowledge:** basic Python, NumPy and PIL; what a binary mask is; what intersection-over-union measures.",
+        "- **Expected output:** no loader notice is expected. The card-pass smoke wrote nothing to stderr during the load, so Section 3 should print only the dictionaries it is asked for; a warning or an error there is a real signal. The upstream repository's `pytorch_model.bin` and TensorFlow weights are not in the manifest and are never staged or loaded.",
+        "- **Data:** the default sample is a deterministic 320×240 scene drawn in code (grey background, one dark rectangle, one red disc) with a foreground click inside the rectangle, so nothing is downloaded and no private data is needed. Optional BYOD upload is gated off by default so the sample path can run top-to-bottom without interaction. Expected BYOD input: one image file decodable by Pillow (PNG/JPEG/WebP and similar), any colour mode, sides between 16 and 4096 px, plus a click position inside it set through the form parameters. Do not upload confidential or restricted data to a hosted notebook environment unless you are authorized to do so. Uploaded inputs remain in the notebook runtime; this pipeline does not send them to a third-party inference API.",
+    ],
+    "cells": [
+        {
+            "md": (
+                "## 4. Draw the synthetic scene or optional BYOD\n\n"
+                "The default sample is **synthetic** and carries its own reference: a deterministic 320×240 RGB scene is drawn "
+                "in code — grey background, a dark filled rectangle at `[40, 60, 140, 180]` and a red filled disc at "
+                "`[200, 80, 280, 160]` — and the prompt is one **foreground click at (90, 120)**, inside the rectangle. A "
+                "boolean reference mask of the drawn rectangle is kept for the `mask_iou` sanity check later. This is the same "
+                "scene and click the repository's card-pass smoke used; it is not a labelled dataset, so nothing here is an mIoU "
+                "measurement. The image digest and the prompt are printed. BYOD is optional and disabled by default; when "
+                "enabled, upload one image and set `POINT_X`/`POINT_Y` to a pixel inside the object you want — no reference "
+                "mask exists for it, so the evaluation report will be `not-measurable`.\n\n"
+                "Prompts describe **one object per call**: up to `MAX_PROMPTS` (16) clicks with 0/1 labels and/or one xyxy box; "
+                "several objects need several calls. `MULTIMASK` (default `True`) asks for three candidate masks — useful when "
+                "a single click is ambiguous (part, object, or object plus surroundings) — while `False` returns one. Nothing "
+                "is validated in this cell: the next section hands the image and the prompts to the pipeline's own validation "
+                "stage, which is the only checker. Look for a dictionary naming the sample kind, the image size and digest, the "
+                "click, the multimask setting, and the reference mask area."
+            ),
+            "code": (
+                "import hashlib\n"
+                "import io\n\n"
+                "import numpy as np\n"
+                "from PIL import Image, ImageDraw\n\n"
+                "USE_BYOD = False  # @param {{type:\"boolean\"}}\n"
+                "POINT_X = 90  # @param {{type:\"integer\"}}\n"
+                "POINT_Y = 120  # @param {{type:\"integer\"}}\n"
+                "MULTIMASK = True  # @param {{type:\"boolean\"}}\n\n"
+                "if USE_BYOD:\n"
+                "    from google.colab import files\n"
+                "    uploaded = files.upload()\n"
+                "    image_name = next(iter(uploaded))\n"
+                "    image = Image.open(io.BytesIO(uploaded[image_name]))\n"
+                "    image.load()\n"
+                "    reference_mask = None\n"
+                "    sample_kind = 'BYOD'\n"
+                "else:\n"
+                "    # Deterministic synthetic scene: no randomness, so no seed is needed and the digest is stable.\n"
+                "    image = Image.new('RGB', (320, 240), (128, 128, 128))\n"
+                "    draw = ImageDraw.Draw(image)\n"
+                "    rectangle_box = [40, 60, 140, 180]\n"
+                "    draw.rectangle(rectangle_box, fill=(30, 30, 30))\n"
+                "    draw.ellipse([200, 80, 280, 160], fill=(220, 30, 30))\n"
+                "    reference = Image.new('1', image.size, 0)\n"
+                "    ImageDraw.Draw(reference).rectangle(rectangle_box, fill=1)\n"
+                "    reference_mask = np.asarray(reference, dtype=np.bool_)\n"
+                "    image_name = 'synthetic_scene_320x240.png'\n"
+                "    sample_kind = 'synthetic'\n\n"
+                "points, point_labels = [[POINT_X, POINT_Y]], [1]\n"
+                "image_sha256 = hashlib.sha256(np.asarray(image.convert('RGB')).tobytes()).hexdigest()\n"
+                "print({{'sample_kind': sample_kind, 'name': image_name, 'mode': image.mode, 'size': image.size, 'rgb_sha256': image_sha256, 'points': points, 'point_labels': point_labels, 'multimask': MULTIMASK, 'reference_mask_area_px': None if reference_mask is None else int(reference_mask.sum())}})"
+            ),
+        },
+        {
+            "md": (
+                "## 5. Validate the request → input manifest\n\n"
+                "`validate_inputs` is the pipeline's public validation stage: it applies exactly the checks `segment` applies — "
+                "image type and sides `MIN_IMAGE_SIDE`..`MAX_IMAGE_SIDE` px, at least one of points or box, 1..`MAX_PROMPTS` "
+                "clicks that lie inside the image with 0/1 labels, one non-empty xyxy box inside the image, and a boolean "
+                "`multimask` — and returns an **input manifest** naming the schema and ceilings, the input's observed mode and "
+                "size, how many clicks and whether a box was given, the cleaned prompt values, and the verdict. The manifest is "
+                "written to `outputs/{stem}_input_manifest.json`. To show what rejection looks like, the cell also validates a "
+                "click outside the image and records the pipeline's own error message as a finding. Inside the pipeline the "
+                "image is converted to RGB, resized and padded by the processor; masks are mapped back to input pixels with the "
+                "padding stripped, and nothing else is dropped or altered."
+            ),
+            "code": (
+                "import json\n"
+                "import os\n\n"
+                "os.makedirs('outputs', exist_ok=True)\n"
+                "print({{'ceilings': {{'MIN_IMAGE_SIDE': MIN_IMAGE_SIDE, 'MAX_IMAGE_SIDE': MAX_IMAGE_SIDE, 'MAX_PROMPTS': MAX_PROMPTS, 'NUM_MULTIMASK_OUTPUTS': NUM_MULTIMASK_OUTPUTS, 'MASK_THRESHOLD': MASK_THRESHOLD}}}})\n"
+                "input_manifest = validate_inputs(image, points=points, point_labels=point_labels, multimask=MULTIMASK, names=[image_name])\n"
+                "# Demonstrate rejection on a prompt outside the image; the finding is recorded, not swallowed.\n"
+                "try:\n"
+                "    validate_inputs(image, points=[[image.width, image.height]], point_labels=[1])\n"
+                "except ValueError as exc:\n"
+                "    input_manifest['findings'].append({{'input': 'click-outside-image-probe', 'verdict': 'rejected', 'message': str(exc)}})\n"
+                "with open('outputs/{stem}_input_manifest.json', 'w', encoding='utf-8') as handle:\n"
+                "    json.dump(input_manifest, handle, indent=2, ensure_ascii=False)\n"
+                "print(json.dumps(input_manifest, indent=2))"
+            ),
+        },
+        {
+            "md": (
+                "## 6. Segment one object and read the scores correctly\n\n"
+                "`segment` returns a dict with `masks` — a boolean array of shape `(K, H, W)` at input resolution, `K = 3` with "
+                "`multimask=True` else `1` — `iou_scores` (one per mask), the cleaned `points`, `point_labels` and `box`, "
+                "`multimask`, `width`, `height` and the model identity. Each `iou_scores` entry is the **model's own "
+                "prediction** of how well that candidate overlaps the intended object: a learned, **uncalibrated** estimate, "
+                "not a measured IoU and not a probability, produced by an unclipped regression head — **a value may exceed "
+                "1.0**. The conventional decision rule — used below and recorded in the evaluation report — is to keep the "
+                "candidate with the highest predicted IoU; the pipeline ships no threshold, does not choose for you, and the "
+                "caller owns any acceptance rule for their deployment. Masks are binarised at logit 0 (the processor default). "
+                "Inference is deterministic on a fixed device and dtype (no sampling, `torch.inference_mode`); CUDA kernel "
+                "selection can move scores in the third or fourth decimal place and, on ambiguous clicks, change which "
+                "candidate ranks first. As recorded in the model card, the repository's CPU smoke on this same scene and click "
+                "returned `iou_scores` of `[0.955, 1.012, 0.979]` with mask areas `[17129, 12216, 11887]` px against the "
+                "rectangle's 12,221 px, argmax candidate 1 and `mask_iou` 1.000 at three decimals — note that the best "
+                "score is above 1.0; that is one observation, not a calibration point."
+            ),
+            "code": (
+                "result = pipe.segment(image, points=points, point_labels=point_labels, multimask=MULTIMASK)\n"
+                "masks = result['masks']\n"
+                "best = int(np.argmax(result['iou_scores']))\n"
+                "best_mask = masks[best]\n"
+                "print({{'masks_shape': masks.shape, 'iou_scores_model_predicted': [round(v, 4) for v in result['iou_scores']], 'scores_above_one': [i for i, v in enumerate(result['iou_scores']) if v > 1.0], 'mask_areas_px': [int(m.sum()) for m in masks], 'best_candidate': best, 'device': pipe.device}})"
+            ),
+        },
+        {
+            "md": (
+                "## 7. Evaluate → evaluation report\n\n"
+                "`evaluation_report` is the pipeline's public evaluation stage and always produces a report. No segmentation "
+                "metric is reported by default: mean IoU needs labelled masks, and this repository ships none. The "
+                "repository's only metric helper is `mask_iou(a, b)` (intersection-over-union of two boolean masks), the "
+                "primitive a caller would use to compute mIoU on their own labelled data; when a reference mask is supplied "
+                "the report carries one `mask_iou` entry per candidate — marking which candidate the decision rule selected — "
+                "with the verdict `sample-sanity`. On the synthetic path that reference is a rectangle **you drew yourself**, "
+                "so a high IoU proves only that the prompt contract, forward pass and up-sampling round-trip on a trivially "
+                "separable shape. On BYOD no reference exists, the verdict is `not-measurable`, and the report states what "
+                "would make the task measurable: hand-labelled masks on your own images averaged into a mean IoU over a "
+                "held-out set. The report also carries the model-predicted IoU scores and every candidate's area, and it is "
+                "written to `outputs/{stem}_evaluation_report.json`."
+            ),
+            "code": (
+                "report = evaluation_report(result, reference_mask, sample_kind=sample_kind)\n"
+                "with open('outputs/{stem}_evaluation_report.json', 'w', encoding='utf-8') as handle:\n"
+                "    json.dump(report, handle, indent=2, ensure_ascii=False)\n"
+                "print(json.dumps(report, indent=2))\n"
+                "if report['verdict'] == 'not-measurable':\n"
+                "    print('No reference mask exists for this input, so mask_iou is not computed; inspect the exported mask and overlay instead.')"
+            ),
+        },
+        {
+            "md": (
+                "## 8. Export outputs and provenance\n\n"
+                "The best candidate mask is written as a 1-bit PNG (`outputs/{stem}_mask.png`) — the actual artifact a "
+                "downstream consumer wants — and an overlay PNG paints it over the input for visual inspection (a supplement "
+                "to, not a replacement for, the machine-readable files). JSON preserves every candidate's model-predicted IoU "
+                "and area, the chosen candidate, the prompt, the evaluation report, the input manifest, the sample identity and "
+                "digest, the notebook's source (repository, revision, embedded module digest, generator), the model identifier, "
+                "the immutable model revision, the model licence, and the runtime identity (Python, `torch`, `transformers`, "
+                "device). The boolean mask array itself is not embedded in the JSON — the PNG and its SHA-256 carry it. No "
+                "credentials are recorded."
+            ),
+            "code": (
+                "Image.fromarray(best_mask).save('outputs/{stem}_mask.png')\n"
+                "overlay = np.asarray(image.convert('RGB')).copy()\n"
+                "overlay[best_mask] = (0.5 * overlay[best_mask] + 0.5 * np.array([0, 255, 0])).astype(np.uint8)\n"
+                "Image.fromarray(overlay, mode='RGB').save('outputs/{stem}_overlay.png')\n"
+                "payload = {{\n"
+                "    'prediction': {{key: value for key, value in result.items() if key != 'masks'}},\n"
+                "    'candidates': [{{'index': i, 'iou_score_model_predicted': float(result['iou_scores'][i]), 'area_px': int(masks[i].sum())}} for i in range(masks.shape[0])],\n"
+                "    'best_candidate': best,\n"
+                "    'mask_file': 'outputs/{stem}_mask.png',\n"
+                "    'mask_sha256': hashlib.sha256(np.packbits(best_mask).tobytes()).hexdigest(),\n"
+                "    'evaluation_report': report,\n"
+                "    'input_manifest': input_manifest,\n"
+                "    'sample': {{'kind': sample_kind, 'name': image_name, 'size': list(image.size), 'rgb_sha256': image_sha256, 'reference_mask_area_px': None if reference_mask is None else int(reference_mask.sum())}},\n"
+                "    'notebook_source': NOTEBOOK_SOURCE,\n"
+                "    'repository_revision': NOTEBOOK_SOURCE['repository_revision'],\n"
+                "    'model_id': MODEL_ID,\n"
+                "    'model_revision': MODEL_REVISION,\n"
+                "    'model_license': MODEL_LICENSE,\n"
+                "    'runtime': {{\n"
+                "        'python': platform.python_version(),\n"
+                "        'torch': torch.__version__,\n"
+                "        'transformers': transformers.__version__,\n"
+                "        'device': pipe.device,\n"
+                "    }},\n"
+                "}}\n"
+                "with open('outputs/{stem}_result.json', 'w', encoding='utf-8') as handle:\n"
+                "    json.dump(payload, handle, indent=2, ensure_ascii=False)\n"
+                "print(sorted(os.listdir('outputs')))"
+            ),
+        },
+    ],
+    "closing": (
+        "## Interpretation and limits\n\n"
+        "The masks are the model's answer to *your* prompt: a click that is ambiguous returns candidates at several "
+        "granularities, and the `iou_scores` used to rank them are the model's own uncalibrated estimates — unclipped, so "
+        "occasionally above 1.0 — not measured overlaps. On the synthetic scene the `mask_iou` values in the evaluation report compare "
+        "candidates with a rectangle you drew yourself and the verdict is `sample-sanity`, which proves only that the input "
+        "contract, prompt validation, forward pass and up-sampling work on a trivially separable shape; it says nothing about "
+        "photographs, thin structures, transparent or occluded objects, or clicks near a boundary, and a BYOD result is a "
+        "single-image observation with the verdict `not-measurable`. One object per call, prompted mode only, no text "
+        "prompts, no class labels. The pipeline provides no automatic mask generation, mask-input prompts, mIoU "
+        "evaluation, or training capability.\n\n"
+        "**Troubleshooting.** `RuntimeError: Core dependencies changed while older modules were loaded` in Section 1: the "
+        "pinned install replaced a package the runtime had pre-imported — restart the runtime and rerun from the top. "
+        "`FileNotFoundError: snapshot file missing` or a `sha256`/`size` `ValueError` in Section 3: a staged file is "
+        "incomplete or altered — delete it from `weights/sam-vit-base/` and rerun Section 3. A `ValueError` naming the "
+        "image sides or the click in Section 5: resize the BYOD image into 16–4096 px per side, or move `POINT_X`/`POINT_Y` "
+        "inside it, and rerun from Section 4.\n\n"
+        "Successful execution proves that the recorded repository revision's pipeline module, carried in this notebook, can "
+        "acquire and digest-verify the pinned model, validate the demonstrated request, execute the public pipeline path, and "
+        "emit the shown machine-readable outputs in the tested runtime — without the repository being reachable. It does "
+        "**not** establish benchmark superiority, deployment calibration, safety for high-consequence decisions, or production "
+        "fitness on an unseen domain.\n\n"
+        "**Next experiments:** set `MULTIMASK = False` and compare the single mask with the best candidate; prompt the disc "
+        "with a box instead of a click (`pipe.segment(image, box=[200, 80, 281, 161], multimask=False)`) and compare its area "
+        "with the disc's (the smoke run returned 5,132 px against the drawn 5,145 px, `mask_iou` 0.997, `iou_scores` "
+        "`[1.002]` — another score above 1.0); add a background click (label 0) inside the rectangle after a "
+        "foreground click on the disc to see the mask exclude it; enable `USE_BYOD` with a photograph, hand-draw one reference "
+        "mask and pass it to `evaluation_report` to see the verdict switch to `sample-sanity` — the first step towards a real "
+        "mIoU. None of these turns the sample result into evidence of production fitness.\n\n"
+        "## References\n\n"
+        "- Repository README: https://github.com/kurtvalcorza/sam-vit-segmentation-pipeline/blob/main/README.md\n"
+        "- Repository model card: https://github.com/kurtvalcorza/sam-vit-segmentation-pipeline/blob/main/MODEL_CARD.md\n"
+        "- Weight provenance: https://github.com/kurtvalcorza/sam-vit-segmentation-pipeline/blob/main/docs/WEIGHTS.md\n"
+        "- Upstream model: https://huggingface.co/{MODEL_ID}\n"
+        "- Upstream code: https://github.com/facebookresearch/segment-anything\n"
+        "- Segment Anything (Kirillov et al., ICCV 2023): https://arxiv.org/abs/2304.02643"
+    ),
+}
