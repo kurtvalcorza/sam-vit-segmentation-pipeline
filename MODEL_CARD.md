@@ -3,6 +3,8 @@ license: apache-2.0
 model_card_spec: "1.1"
 pipeline_tag: mask-generation
 base_model: facebook/sam-vit-base
+date_published: "2023-04-19"
+date_published_source: "Hugging Face Hub repository creation date of the exact hosted checkpoint (`createdAt`, https://huggingface.co/api/models/facebook/sam-vit-base)"
 ---
 
 # SAM ViT-B (DIMER package v0.1.0) — Promptable Image Segmentation (Inference)
@@ -11,7 +13,6 @@ base_model: facebook/sam-vit-base
 [![Upstream GitHub](https://img.shields.io/badge/Upstream%20GitHub-facebookresearch%2Fsegment--anything-181717?style=flat&logo=github&logoColor=white)](https://github.com/facebookresearch/segment-anything)
 [![arXiv Paper](https://img.shields.io/badge/arXiv-2304.02643-b31b1b.svg)](https://arxiv.org/abs/2304.02643)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Pipeline](https://img.shields.io/badge/Pipeline-sam--vit--segmentation--pipeline-2ea44f?style=flat&logo=github)](https://github.com/kurtvalcorza/sam-vit-segmentation-pipeline)
 
 > [!WARNING]
 > ⚠️ **Provided for research, training, and evaluation purposes only.** Model weights are redistributed unmodified under their upstream license, which controls your use, including any commercial use or redistribution; the accompanying code and notebooks are released under this repository's license. All of it is supplied **"as is"**, without warranty of any kind, and has not been validated for production, clinical, or safety-critical use. Running the notebooks downloads third-party weights and datasets governed by their own licenses and consumes compute on your own Colab/Kaggle account. To the maximum extent permitted by law, the maintainers of this repository and the DIMER platform accept no liability for any damages arising from their use. Hosting implies no affiliation with or endorsement by the original authors.
@@ -28,7 +29,7 @@ This pipeline provides a ready-to-run interactive Google Colab notebook that exe
 
 ---
 
-###### Description
+#### Description
 
 `facebook/sam-vit-base` is the Transformers-format release of the ViT-B checkpoint of the Segment Anything Model from Meta AI's *Segment Anything* (Kirillov et al., ICCV 2023, arXiv:2304.02643), pinned here to revision `70c1a07f894ebb5b307fd9eaaee97b9dfc16068f`. The snapshot `config.json` declares `SamModel` with three modules: a ViT-B image encoder (12 layers, `hidden_size` 768, 16-px patches over a 1024×1024 input, windowed attention with `window_size` 14 and global attention at layers 2, 5, 8 and 11, relative position embeddings, 256 output channels), a prompt encoder for points and boxes (`hidden_size` 256, 4 point embeddings, a 64×64 image-embedding grid), and a two-layer two-way Transformer mask decoder with an IoU-prediction head (`iou_head_depth` 3) and `num_multimask_outputs` 3. At inference the model embeds the image once, encodes the caller's point clicks and/or box, and decodes one or three candidate masks with a predicted IoU each; no adaptation happens. This is the original 2023 SAM; the sibling `sam2-segmentation-pipeline` packages SAM 2.1 Hiera-Small, whose Hiera backbone and memory modules also cover video, and the two are not benchmarked against each other here. This repository exposes the prompted image path through `SamModel` + `SamProcessor` and adds packaging: `verify_snapshot` and `stage_missing_files` (manifest digest checking and fresh-clone staging), `SAMViTSegmentationPipeline.from_pretrained` (verified local loading, `trust_remote_code=False`), `validate_image`/`validate_prompts`/`segment` (image and prompt validation, boolean masks at input resolution), and `mask_iou`.
 
@@ -63,7 +64,7 @@ The upstream training masks were produced by SAM's model-in-the-loop "data engin
 
 ###### Environment
 
-Operating environment: Python 3.12 with `torch==2.14.0`, `transformers==4.57.6`, `safetensors==0.8.0`, `numpy==2.5.3`, `pillow==11.3.0`, float32 on CPU; `from_pretrained` picks `cuda:0` when a GPU is visible, but the CUDA path was not exercised for this card. Measured 2026-09-12 in the Windows venv with `CUDA_VISIBLE_DEVICES=-1` and `device="cpu"`: `verify_snapshot` 0.21 s over 4 files (375 MB), load 3.77 s, a 320×240 synthetic scene 2.93 s for one point prompt and 2.53 s for one box prompt, a 4096×4096 noise image with a box 3.11 s; process wall 14.16 s. Cost is dominated by the ViT-B encoder at the fixed 1024×1024 working resolution — roughly three times the per-prompt time the SAM 2.1 Hiera-Small sibling recorded on the same machine and scene — and the caller's resolution mostly sets the size of the up-sampled boolean masks (a 4096×4096 three-mask result is 48 MiB). Data environment: the model assumes an ordinary photograph in which the prompted object has a visible boundary; low contrast, transparency, thin structures, and heavy occlusion produce masks that bleed or fragment, and the predicted IoU may stay high while they do.
+Operating environment: Python 3.12 with `torch==2.14.0`, `torchvision==0.29.0`, `torchaudio==2.11.0`, `transformers==4.57.6`, `safetensors==0.8.0`, `numpy==2.5.3`, `pillow==11.3.0`, float32 on CPU; `from_pretrained` picks `cuda:0` when a GPU is visible, but the CUDA path was not exercised for this card. Measured 2026-09-12 in the Windows venv with `CUDA_VISIBLE_DEVICES=-1` and `device="cpu"`: `verify_snapshot` 0.21 s over 4 files (375 MB), load 3.77 s, a 320×240 synthetic scene 2.93 s for one point prompt and 2.53 s for one box prompt, a 4096×4096 noise image with a box 3.11 s; process wall 14.16 s. Cost is dominated by the ViT-B encoder at the fixed 1024×1024 working resolution — roughly three times the per-prompt time the SAM 2.1 Hiera-Small sibling recorded on the same machine and scene — and the caller's resolution mostly sets the size of the up-sampled boolean masks (a 4096×4096 three-mask result is 48 MiB). Data environment: the model assumes an ordinary photograph in which the prompted object has a visible boundary; low contrast, transparency, thin structures, and heavy occlusion produce masks that bleed or fragment, and the predicted IoU may stay high while they do.
 
 #### Metrics
 
@@ -131,7 +132,7 @@ Prohibited even where the model would work: covert surveillance or tracking of i
 
 ## Runtime
 
-- Pins: `torch==2.14.0`, `transformers==4.57.6`, `safetensors==0.8.0`, `huggingface-hub==0.36.2`, `numpy==2.5.3`, `pillow==11.3.0`; Python 3.12.
+- Pins: `torch==2.14.0`, `torchvision==0.29.0`, `torchaudio==2.11.0`, `transformers==4.57.6`, `safetensors==0.8.0`, `huggingface-hub==0.36.2`, `numpy==2.5.3`, `pillow==11.3.0`; Python 3.12.
 - Precision: float32; preprocessing resize longest edge to 1024 (bilinear, `resample` 2), pad to 1024×1024, ImageNet mean/std (`SamImageProcessor` from the snapshot); masks decoded at 256×256, padding removed via `reshaped_input_sizes`, up-sampled to the input size, binarised at logit 0.
 - Measured 2026-09-12 in the Windows venv (`torch 2.14.0+cu130`, `torch.cuda.is_available()` False under `CUDA_VISIBLE_DEVICES=-1`), device `cpu`, source local snapshot: `verify_snapshot` 0.21 s (4 files, 375 MB); load 3.77 s; `segment` on a synthetic 320×240 scene (grey background, dark rectangle at [40, 60, 140, 180], red disc centred at (240, 120) with radius 40) with one foreground click at (90, 120) → `masks (3, 240, 320)` bool, `iou_scores` [0.955, 1.012, 0.979], areas [17129, 12216, 11887] px, `mask_iou` of the argmax candidate (index 1) against the drawn 12221-px rectangle 1.000 at three decimals, 2.93 s; box `[200, 80, 281, 161]` with `multimask=False` → one mask of 5132 px (drawn disc 5145 px), `iou_scores` [1.002], `mask_iou` 0.997, 2.53 s; 4096×4096 uniform-noise image with a box → `(1, 4096, 4096)` in 3.11 s. Process wall 14.16 s; nothing written to stderr.
 - Tests: `pytest -q -o addopts= tests` — 12 passed, offline, no weights required; `ruff check src tests` clean.

@@ -119,7 +119,7 @@ they are measurements for the stated runtime, not general estimates.
 
 | Date (UTC) | Commit / notebook blob | Executor | Path exercised | Wall | Outcome |
 |---|---|---|---|---|---|
-| | | | Default sample path | | pending — queued to the GPU lane |
+| 2026-09-14 | `e365f33` / `0a3163dd77cf` | Kaggle CPU (`kurtvalcorza/dimer-nb2-sam-vit-segmentation` v1) | Default sample path | 235.3 s | **PASSED** — 8/8 ok code cells executed cleanly, 10 files, 375 MB staged |
 
 ## Current status
 
