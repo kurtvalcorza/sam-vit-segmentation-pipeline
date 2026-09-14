@@ -2,6 +2,7 @@
 license: apache-2.0
 model_card_spec: "1.1"
 pipeline_tag: mask-generation
+task: "Others - Promptable Image Segmentation"
 base_model: facebook/sam-vit-base
 date_published: "2023-04-19"
 date_published_source: "Hugging Face Hub repository creation date of the exact hosted checkpoint (`createdAt`, https://huggingface.co/api/models/facebook/sam-vit-base)"
