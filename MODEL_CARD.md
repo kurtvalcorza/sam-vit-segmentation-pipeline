@@ -7,7 +7,7 @@ date_published: "2023-04-19"
 date_published_source: "Hugging Face Hub repository creation date of the exact hosted checkpoint (`createdAt`, https://huggingface.co/api/models/facebook/sam-vit-base)"
 ---
 
-# SAM ViT-B (DIMER package v0.1.0) — Promptable Image Segmentation (Inference)
+# SAM ViT-B — Promptable Image Segmentation (Inference)
 
 [![Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-facebook%2Fsam--vit--base-ffcc4d?style=flat)](https://huggingface.co/facebook/sam-vit-base)
 [![Upstream GitHub](https://img.shields.io/badge/Upstream%20GitHub-facebookresearch%2Fsegment--anything-181717?style=flat&logo=github&logoColor=white)](https://github.com/facebookresearch/segment-anything)
