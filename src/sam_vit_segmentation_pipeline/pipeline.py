@@ -7,10 +7,13 @@ clicks and/or one box, returning boolean masks at input resolution plus the mode
 
 from __future__ import annotations
 
+# ruff: noqa: E501  -- adaptation-contract lines are kept at the fleet width
 import hashlib
 import json
+import random
+import time
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +36,16 @@ MIN_IMAGE_SIDE = 16
 MAX_PROMPTS = 16
 NUM_MULTIMASK_OUTPUTS = 3  # config.json mask_decoder_config.num_multimask_outputs
 MASK_THRESHOLD = 0.0  # logits above this become True in the binarised masks (processor default)
+PARAMETER_COUNT = 93_735_472
+MASK_DECODER_PARAMETERS = 4_058_340
+ARTIFACT_FORMAT = f"org.valcorza.{MODEL_KEY}.adapter.v1"
+ARTIFACT_VERSION = "1.0"
+ADAPTER_WEIGHTS = "adapter.safetensors"
+ADAPTER_MANIFEST = "manifest.json"
+WEIGHT_FILE = "model.safetensors"
+MIN_SCORED_RECORDS = 50  # below this a scored set is labelled a small sample
+MAX_EVAL_RECORDS = 5_000
+PROMPT_KINDS = ("point", "box", "mixed")
 
 
 def _sha256(path: Path) -> str:
@@ -329,6 +342,55 @@ def evaluation_report(
     }
 
 
+def _trainable_names(model: Any) -> list[str]:
+    """Every parameter of the mask decoder (transformer, upscaling and IoU-prediction heads). The image encoder
+    and the prompt encoder stay frozen."""
+    return [name for name, _ in model.named_parameters() if name.startswith("mask_decoder.")]
+
+
+def _check_artifact_manifest(manifest: Mapping[str, Any], artifact_dir: Path, base_sha256: str) -> None:
+    """Refuse an adapter that names another base, another format or a file that does not match its digest."""
+    if manifest.get("format") != ARTIFACT_FORMAT:
+        raise ValueError(f"artifact format {manifest.get('format')!r} != {ARTIFACT_FORMAT!r}")
+    base = manifest.get("base", {})
+    if base.get("model_id") != MODEL_ID or base.get("revision") != MODEL_REVISION:
+        raise ValueError(f"artifact was trained on {base.get('model_id')}@{base.get('revision')}, not {MODEL_ID}@{MODEL_REVISION}")
+    if base.get("weight_sha256") != base_sha256:
+        raise ValueError("artifact base weight digest does not match the verified snapshot")
+    files = manifest.get("files") or []
+    if len(files) != 1 or files[0].get("path") != ADAPTER_WEIGHTS:
+        raise ValueError(f"artifact manifest must list exactly {ADAPTER_WEIGHTS}")
+    weights = artifact_dir / ADAPTER_WEIGHTS
+    if not weights.is_file():
+        raise FileNotFoundError(f"artifact weights missing: {weights}")
+    size = weights.stat().st_size
+    if size != files[0].get("bytes"):
+        raise ValueError(f"{ADAPTER_WEIGHTS}: size {size} != manifest {files[0].get('bytes')}")
+    digest = _sha256(weights)
+    if digest != files[0].get("sha256"):
+        raise ValueError(f"{ADAPTER_WEIGHTS}: sha256 {digest} != manifest {files[0].get('sha256')}")
+    names = manifest.get("tensors") or []
+    if not names or any(not str(n).startswith("mask_decoder.") for n in names):
+        raise ValueError("artifact tensors must all belong to the mask decoder")
+    if (manifest.get("adapter") or {}).get("prompts") not in PROMPT_KINDS:
+        raise ValueError(f"artifact adapter.prompts must be one of {PROMPT_KINDS}")
+
+
+def _low_res_target(mask: np.ndarray) -> Any:
+    """A record's boolean mask in the model's low-resolution frame: resized so the longest side is 1024, padded to
+    1024x1024 at the bottom/right (as the processor pads the image), then downsampled to the 256x256 decoder grid."""
+    import torch
+
+    target = torch.from_numpy(np.asarray(mask, dtype=np.float32))[None, None]
+    height, width = target.shape[2], target.shape[3]
+    scale = 1024 / max(height, width)
+    new_h, new_w = int(round(height * scale)), int(round(width * scale))
+    resized = torch.nn.functional.interpolate(target, size=(new_h, new_w), mode="bilinear", align_corners=False)
+    canvas = torch.zeros(1, 1, 1024, 1024)
+    canvas[:, :, :new_h, :new_w] = resized
+    return torch.nn.functional.interpolate(canvas, size=(256, 256), mode="bilinear", align_corners=False)[0]
+
+
 @dataclass
 class SAMViTSegmentationPipeline:
     """Promptable image segmentation (points/box -> masks) over the pinned SAM ViT-B checkpoint.
@@ -337,6 +399,10 @@ class SAMViTSegmentationPipeline:
 
     _runner: Callable[..., tuple[np.ndarray, list[float]]]
     device: str
+    _model: Any = field(default=None, repr=False)
+    _processor: Any = field(default=None, repr=False)
+    weight_sha256: str | None = None
+    adapter: dict[str, Any] | None = None
 
     @classmethod
     def from_pretrained(
@@ -350,9 +416,13 @@ class SAMViTSegmentationPipeline:
 
         resolved_device = device or ("cuda:0" if torch.cuda.is_available() else "cpu")
         root = Path(weights_dir) if weights_dir is not None else DEFAULT_WEIGHTS_DIR
+        weight_sha256 = None
         if (root / MANIFEST_NAME).is_file():
             stage_missing_files(root, allow_download=allow_download)
             verify_snapshot(root)
+            with open(root / MANIFEST_NAME, encoding="utf-8") as handle:
+                entries = json.load(handle).get("files", [])
+            weight_sha256 = next((e["sha256"] for e in entries if e["path"] == WEIGHT_FILE), None)
             source, kwargs = str(root), {"local_files_only": True}
         elif allow_download:
             source, kwargs = MODEL_ID, {}
@@ -368,6 +438,8 @@ class SAMViTSegmentationPipeline:
             source, revision=MODEL_REVISION, dtype=torch.float32, trust_remote_code=False, **kwargs
         )
         model = model.to(resolved_device).eval()
+        for param in model.parameters():
+            param.requires_grad_(False)
 
         def runner(image, points, labels, box, multimask) -> tuple[np.ndarray, list[float]]:
             prompt_kwargs: dict[str, Any] = {}
@@ -388,7 +460,7 @@ class SAMViTSegmentationPipeline:
             )[0]
             return masks[0].numpy().astype(np.bool_), [float(v) for v in outputs.iou_scores[0, 0].tolist()]
 
-        return cls(runner, resolved_device)
+        return cls(runner, resolved_device, model, processor, weight_sha256)
 
     def segment(
         self,
@@ -420,3 +492,262 @@ class SAMViTSegmentationPipeline:
             "model_id": MODEL_ID,
             "model_revision": MODEL_REVISION,
         }
+
+    def _require_model(self) -> tuple[Any, Any]:
+        if self._model is None or self._processor is None:
+            raise RuntimeError("this pipeline has no loaded model (injected runner); use from_pretrained for evaluate/adapt")
+        return self._model, self._processor
+
+
+    def _prompt_kwargs(self, record: Mapping[str, Any], prompt: str) -> dict[str, Any]:
+        if prompt == "point":
+            return {"points": [record["point"]], "point_labels": [1]}
+        if prompt == "box":
+            return {"box": record["box"]}
+        raise ValueError(f"prompt must be 'point' or 'box', got {prompt!r}")
+
+
+    def predict_mask(self, record: Mapping[str, Any], *, prompt: str = "point") -> np.ndarray:
+        """One boolean mask for a record: `segment` with the record's point (label 1) or box, keeping the multimask
+        output the model itself scores highest — the single-mask policy the corpus measures use."""
+        result = self.segment(record["image"], multimask=True, **self._prompt_kwargs(record, prompt))
+        return result["masks"][int(np.argmax(result["iou_scores"]))]
+
+
+    def evaluate(self, records: Sequence[Mapping[str, Any]], *, prompt: str = "point", progress: Callable[[int, int], None] | None = None) -> dict[str, Any]:
+        """Segment every validated record from one prompt kind and score the masks with `metrics.segmentation_metrics`
+        (mean IoU and hit rate, overall and per category)."""
+        from .metrics import segmentation_metrics
+        from .samples import validate_dataset
+
+        if prompt not in ("point", "box"):
+            raise ValueError("prompt must be 'point' or 'box'")
+        checked = validate_dataset(records, min_records=1, max_records=MAX_EVAL_RECORDS)["records"]
+        started = time.perf_counter()
+        masks = []
+        for i, record in enumerate(checked):
+            masks.append(self.predict_mask(record, prompt=prompt))
+            if progress is not None:
+                progress(i + 1, len(checked))
+        metrics = segmentation_metrics(masks, checked)
+        metrics.update(
+            {
+                "prompt": prompt,
+                "verdict": "measured" if len(checked) >= MIN_SCORED_RECORDS else "measured-small-sample",
+                "adapted": self.adapter is not None,
+                "seconds": round(time.perf_counter() - started, 3),
+                "model_id": MODEL_ID,
+                "model_revision": MODEL_REVISION,
+            }
+        )
+        return metrics
+
+
+    def adapt(
+        self,
+        train: Sequence[Mapping[str, Any]],
+        val: Sequence[Mapping[str, Any]] | None = None,
+        *,
+        epochs: int = 6,
+        lr: float = 5e-5,
+        prompts: str = "mixed",
+        seed: int = 0,
+        progress: Callable[[Mapping[str, Any]], None] | None = None,
+    ) -> dict[str, Any]:
+        """Bounded fine-tuning of the mask decoder only: the frozen image encoder embeds every training image once
+        (cached), the frozen prompt encoder embeds the record's point or box (`prompts`: 'point', 'box' or 'mixed' —
+        a seeded coin per record and epoch), and the decoder's single-mask logits are trained against the target mask
+        in the 256x256 low-resolution frame with binary cross-entropy plus a soft Dice term. AdamW (no weight decay),
+        gradient clipping at 1.0, one record per step, seeded shuffling, no scheduler. Epoch 0 records the frozen
+        model's validation metrics; the epoch with the highest validation point-prompt IoU is kept (the final one
+        without a validation split). On any exception the frozen weights are restored."""
+        model, processor = self._require_model()  # refuse before importing torch
+        import torch
+
+        from .samples import validate_dataset
+
+        if isinstance(epochs, bool) or not isinstance(epochs, int) or not 1 <= epochs <= 50:
+            raise ValueError("epochs must be an int in 1..50")
+        if not isinstance(lr, int | float) or not 0.0 < float(lr) <= 1e-2:
+            raise ValueError("lr must be in (0, 1e-2]")
+        if prompts not in PROMPT_KINDS:
+            raise ValueError(f"prompts must be one of {PROMPT_KINDS}")
+        train_checked = validate_dataset(train)["records"]
+        val_checked = validate_dataset(val, min_records=1)["records"] if val is not None else None
+        names = _trainable_names(model)
+        name_set = set(names)
+        device = torch.device(self.device)
+        frozen_state = {k: v.detach().clone() for k, v in model.state_dict().items() if k in name_set}
+        previous_adapter = self.adapter
+        history: list[dict[str, Any]] = []
+        started = time.perf_counter()
+
+        def _val() -> dict[str, Any] | None:
+            if val_checked is None:
+                return None
+            result = self.evaluate(val_checked, prompt="point")
+            return {k: result[k] for k in ("iou", "hit_rate", "n")}
+
+        try:
+            for param in model.parameters():
+                param.requires_grad_(False)
+            params = []
+            for name, param in model.named_parameters():
+                if name in name_set:
+                    param.requires_grad_(True)
+                    params.append(param)
+            n_trainable = sum(p.numel() for p in params)
+            embed_started = time.perf_counter()
+            embeddings: dict[str, Any] = {}
+            with torch.no_grad():  # not inference_mode: the cached embeddings feed a backward pass
+                for record in train_checked:
+                    pixel_values = processor(images=record["image"], return_tensors="pt")["pixel_values"].to(device)
+                    embeddings[record["id"]] = model.get_image_embeddings(pixel_values).clone()
+            embed_seconds = round(time.perf_counter() - embed_started, 3)
+            targets = {record["id"]: _low_res_target(record["mask"]).to(device) for record in train_checked}
+            entry = {"epoch": 0, "train_loss": None, "val": _val(), "note": "frozen model"}
+            history.append(entry)
+            if progress is not None:
+                progress(entry)
+            best_epoch, best_score = 0, (history[0]["val"] or {}).get("iou", -1.0)
+            best_state = frozen_state
+            optimizer = torch.optim.AdamW(params, lr=float(lr), weight_decay=0.0)
+            rng = random.Random(seed)
+            torch.manual_seed(seed)
+            for epoch in range(1, epochs + 1):
+                model.train()
+                order = list(train_checked)
+                rng.shuffle(order)
+                losses = []
+                for record in order:
+                    use_box = prompts == "box" or (prompts == "mixed" and rng.random() < 0.5)
+                    if use_box:
+                        encoded = processor(images=record["image"], input_boxes=[[record["box"]]], return_tensors="pt")
+                        output = model(image_embeddings=embeddings[record["id"]], input_boxes=encoded["input_boxes"].to(device), multimask_output=False)
+                    else:
+                        encoded = processor(images=record["image"], input_points=[[[record["point"]]]], input_labels=[[[1]]], return_tensors="pt")
+                        output = model(image_embeddings=embeddings[record["id"]], input_points=encoded["input_points"].to(device), input_labels=encoded["input_labels"].to(device), multimask_output=False)
+                    logits = output.pred_masks[0, 0]
+                    target = targets[record["id"]]
+                    bce = torch.nn.functional.binary_cross_entropy_with_logits(logits, target)
+                    prob = torch.sigmoid(logits)
+                    dice = 1.0 - (2.0 * (prob * target).sum() + 1.0) / (prob.sum() + target.sum() + 1.0)
+                    loss = bce + dice
+                    optimizer.zero_grad(set_to_none=True)
+                    loss.backward()
+                    torch.nn.utils.clip_grad_norm_(params, 1.0)
+                    optimizer.step()
+                    losses.append(float(loss.detach()))
+                model.eval()
+                entry = {"epoch": epoch, "train_loss": sum(losses) / len(losses), "val": _val()}
+                history.append(entry)
+                if progress is not None:
+                    progress(entry)
+                if val_checked is None or entry["val"]["iou"] > best_score:
+                    best_epoch, best_score = epoch, (entry["val"] or {}).get("iou", -1.0)
+                    best_state = {k: v.detach().clone() for k, v in model.state_dict().items() if k in name_set}
+            model.load_state_dict(best_state, strict=False)
+            for param in model.parameters():
+                param.requires_grad_(False)
+            model.eval()
+        except BaseException:
+            model.load_state_dict(frozen_state, strict=False)
+            for param in model.parameters():
+                param.requires_grad_(False)
+            model.eval()
+            self.adapter = previous_adapter
+            raise
+        self.adapter = {
+            "prompts": prompts,
+            "trainable_names": names,
+            "n_trainable": n_trainable,
+            "n_total": sum(p.numel() for p in model.parameters()),
+            "epochs": epochs,
+            "best_epoch": best_epoch,
+            "selection": "highest validation point-prompt IoU" if val_checked is not None else "final epoch (no validation split)",
+            "loss": "binary cross-entropy + soft Dice on the 256x256 single-mask logits",
+            "lr": float(lr),
+            "seed": seed,
+            "n_train": len(train_checked),
+            "n_val": len(val_checked) if val_checked is not None else 0,
+            "embedding_seconds": embed_seconds,
+            "history": history,
+            "seconds": round(time.perf_counter() - started, 3),
+        }
+        return dict(self.adapter)
+
+
+    def save_artifact(self, output_dir: str | Path, metadata: Mapping[str, Any] | None = None) -> Path:
+        """Write the trained mask-decoder tensors as safetensors plus a manifest naming the base, the digests and the
+        training configuration. Requires a prior `adapt`."""
+        model, _processor = self._require_model()  # refuse before importing torch
+        import torch
+        from safetensors.torch import save_file
+
+        if self.adapter is None:
+            raise RuntimeError("nothing to save: call adapt() first")
+        out = Path(output_dir)
+        out.mkdir(parents=True, exist_ok=True)
+        names = list(self.adapter["trainable_names"])
+        state = model.state_dict()
+        tensors = {name: state[name].detach().cpu().contiguous() for name in names}
+        weights = out / ADAPTER_WEIGHTS
+        save_file(tensors, str(weights), metadata={"format": "pt"})
+        manifest = {
+            "format": ARTIFACT_FORMAT,
+            "version": ARTIFACT_VERSION,
+            "base": {"model_id": MODEL_ID, "revision": MODEL_REVISION, "weight_file": WEIGHT_FILE, "weight_sha256": self.weight_sha256},
+            "adapter": {k: v for k, v in self.adapter.items() if k not in ("history", "trainable_names")},
+            "history": self.adapter["history"],
+            "tensors": names,
+            "files": [{"path": ADAPTER_WEIGHTS, "bytes": weights.stat().st_size, "sha256": _sha256(weights)}],
+            "torch": torch.__version__,
+            "metadata": dict(metadata or {}),
+        }
+        with open(out / ADAPTER_MANIFEST, "w", encoding="utf-8") as handle:
+            json.dump(manifest, handle, indent=2, ensure_ascii=False)
+        return out
+
+
+    def load_artifact(self, artifact_dir: str | Path) -> dict[str, Any]:
+        """Overlay a saved adapter onto this (freshly loaded) pipeline after checking its manifest, digest and exact
+        tensor set. Refuses tensors outside the mask decoder."""
+        model, _processor = self._require_model()  # refuse before importing safetensors
+        from safetensors.torch import load_file
+
+        artifact = Path(artifact_dir)
+        manifest_path = artifact / ADAPTER_MANIFEST
+        if not manifest_path.is_file():
+            raise FileNotFoundError(f"artifact manifest missing: {manifest_path}")
+        with open(manifest_path, encoding="utf-8") as handle:
+            manifest = json.load(handle)
+        _check_artifact_manifest(manifest, artifact, self.weight_sha256 or "")
+        expected = _trainable_names(model)
+        if sorted(manifest["tensors"]) != sorted(expected):
+            raise ValueError("artifact tensor set does not match its recorded configuration")
+        tensors = load_file(str(artifact / ADAPTER_WEIGHTS))
+        if sorted(tensors) != sorted(expected):
+            raise ValueError("artifact tensor names differ from the manifest")
+        state = model.state_dict()
+        for name, tensor in tensors.items():
+            if tuple(tensor.shape) != tuple(state[name].shape):
+                raise ValueError(f"artifact tensor {name} has shape {tuple(tensor.shape)}, base has {tuple(state[name].shape)}")
+        model.load_state_dict({k: v.to(state[k].device, state[k].dtype) for k, v in tensors.items()}, strict=False)
+        model.eval()
+        self.adapter = {**manifest["adapter"], "trainable_names": expected, "history": manifest.get("history", [])}
+        return dict(self.adapter)
+
+
+    @classmethod
+    def from_artifact(
+        cls,
+        artifact_dir: str | Path,
+        *,
+        device: str | None = None,
+        weights_dir: str | Path | None = None,
+        allow_download: bool = False,
+    ) -> SAMViTSegmentationPipeline:
+        """Load the verified base snapshot, then overlay the adapter (verified before deserialising)."""
+        pipe = cls.from_pretrained(device=device, weights_dir=weights_dir, allow_download=allow_download)
+        pipe.load_artifact(artifact_dir)
+        return pipe
