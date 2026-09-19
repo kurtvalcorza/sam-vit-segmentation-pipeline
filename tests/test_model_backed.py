@@ -71,7 +71,7 @@ def test_one_epoch_adaptation_and_artifact_round_trip(pipe, records, tmp_path):
     result = pipe.adapt(records[:12], records[12:], epochs=1, prompts="mixed")
     assert result["n_trainable"] == MASK_DECODER_PARAMETERS and result["n_total"] == PARAMETER_COUNT
     assert result["history"][0]["note"] == "frozen model" and result["history"][1]["train_loss"] > 0.0
-    assert set(result["history"][1]["val"]) == {"iou", "hit_rate", "n"} and result["embedding_seconds"] > 0.0
+    assert set(result["history"][1]["val"]) == {"iou", "hit_rate", "box_iou", "box_hit_rate", "score", "n"} and result["embedding_seconds"] > 0.0
     assert all(n.startswith("mask_decoder.") for n in result["trainable_names"])
     assert not any(n.startswith(("vision_encoder.", "prompt_encoder.")) for n in result["trainable_names"])
     artifact = pipe.save_artifact(tmp_path / "adapter", {"note": "test"})

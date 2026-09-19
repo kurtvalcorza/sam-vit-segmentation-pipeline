@@ -559,7 +559,8 @@ class SAMViTSegmentationPipeline:
         a seeded coin per record and epoch), and the decoder's single-mask logits are trained against the target mask
         in the 256x256 low-resolution frame with binary cross-entropy plus a soft Dice term. AdamW (no weight decay),
         gradient clipping at 1.0, one record per step, seeded shuffling, no scheduler. Epoch 0 records the frozen
-        model's validation metrics; the epoch with the highest validation point-prompt IoU is kept (the final one
+        model's validation metrics; the epoch with the highest mean of the validation point- and box-prompt IoU is kept
+        (the final one
         without a validation split). On any exception the frozen weights are restored."""
         model, processor = self._require_model()  # refuse before importing torch
         import torch
@@ -579,14 +580,24 @@ class SAMViTSegmentationPipeline:
         device = torch.device(self.device)
         frozen_state = {k: v.detach().clone() for k, v in model.state_dict().items() if k in name_set}
         previous_adapter = self.adapter
+        cudnn_flags = (torch.backends.cudnn.deterministic, torch.backends.cudnn.benchmark)
+        torch.backends.cudnn.deterministic, torch.backends.cudnn.benchmark = True, False  # repeatable on one device
         history: list[dict[str, Any]] = []
         started = time.perf_counter()
 
         def _val() -> dict[str, Any] | None:
             if val_checked is None:
                 return None
-            result = self.evaluate(val_checked, prompt="point")
-            return {k: result[k] for k in ("iou", "hit_rate", "n")}
+            point = self.evaluate(val_checked, prompt="point")
+            box = self.evaluate(val_checked, prompt="box")
+            return {
+                "iou": point["iou"],
+                "hit_rate": point["hit_rate"],
+                "box_iou": box["iou"],
+                "box_hit_rate": box["hit_rate"],
+                "score": (point["iou"] + box["iou"]) / 2.0,
+                "n": point["n"],
+            }
 
         try:
             for param in model.parameters():
@@ -609,7 +620,7 @@ class SAMViTSegmentationPipeline:
             history.append(entry)
             if progress is not None:
                 progress(entry)
-            best_epoch, best_score = 0, (history[0]["val"] or {}).get("iou", -1.0)
+            best_epoch, best_score = 0, (history[0]["val"] or {}).get("score", -1.0)
             best_state = frozen_state
             optimizer = torch.optim.AdamW(params, lr=float(lr), weight_decay=0.0)
             rng = random.Random(seed)
@@ -643,8 +654,8 @@ class SAMViTSegmentationPipeline:
                 history.append(entry)
                 if progress is not None:
                     progress(entry)
-                if val_checked is None or entry["val"]["iou"] > best_score:
-                    best_epoch, best_score = epoch, (entry["val"] or {}).get("iou", -1.0)
+                if val_checked is None or entry["val"]["score"] > best_score:
+                    best_epoch, best_score = epoch, (entry["val"] or {}).get("score", -1.0)
                     best_state = {k: v.detach().clone() for k, v in model.state_dict().items() if k in name_set}
             model.load_state_dict(best_state, strict=False)
             for param in model.parameters():
@@ -657,6 +668,8 @@ class SAMViTSegmentationPipeline:
             model.eval()
             self.adapter = previous_adapter
             raise
+        finally:
+            torch.backends.cudnn.deterministic, torch.backends.cudnn.benchmark = cudnn_flags
         self.adapter = {
             "prompts": prompts,
             "trainable_names": names,
@@ -664,7 +677,7 @@ class SAMViTSegmentationPipeline:
             "n_total": sum(p.numel() for p in model.parameters()),
             "epochs": epochs,
             "best_epoch": best_epoch,
-            "selection": "highest validation point-prompt IoU" if val_checked is not None else "final epoch (no validation split)",
+            "selection": "highest mean of validation point- and box-prompt IoU" if val_checked is not None else "final epoch (no validation split)",
             "loss": "binary cross-entropy + soft Dice on the 256x256 single-mask logits",
             "lr": float(lr),
             "seed": seed,
