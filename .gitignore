@@ -17,3 +17,4 @@ weights/**/*.onnx
 weights/**/*.h5
 weights/**/*.msgpack
 weights/**/.cache/
+weights/ade20k/
