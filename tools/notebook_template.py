@@ -23,6 +23,20 @@ TEMPLATE = {
     "notebook_name": "sam_vit_segmentation_colab.ipynb",
     "profile": "E2E",
     "mode": "GUIDED",
+    "isolated_runtime": True,
+    "infrastructure_labels": True,
+    # The fleet's uv isolated-environment mechanism (generator /2.2): managed CPython, a
+    # size- and SHA-256-verified uv wheel, and a lock compiled from the pyproject pins with
+    # `uv pip compile pyproject.toml --python-version 3.12 --python-platform x86_64-manylinux_2_28 --generate-hashes
+    # --only-binary :all: -o tutorials/requirements-colab.lock.txt`.
+    "managed_python": "3.12.12",
+    "uv": {
+        "version": "0.12.15",
+        "url": "https://files.pythonhosted.org/packages/1e/fd/432451d732917c49152a291de3ef171aa6b0f1a22d39780fb2c1f085ca4c/uv-0.12.15-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        "bytes": 20081404,
+        "sha256": "aee9802f46bae436bd91751bb33ddeb379ef1596b5c19df193219d545d244b60",
+    },
+    "lock": "tutorials/requirements-colab.lock.txt",
     "pipeline_class": "SAMViTSegmentationPipeline",
     "weights_key": "sam-vit-base",
     "modules": ["pipeline.py", "metrics.py", "samples.py"],
@@ -53,7 +67,8 @@ TEMPLATE = {
     ],
     "capability": "promptable image segmentation (one point click or one box → one object's mask) and bounded supervised fine-tuning of the mask decoder on labelled point/box → mask records, using the pinned `facebook/sam-vit-base` weights (SAM v1, ViT-B)",
     "run_all": (
-        "Selecting **Run all** in a fresh supported runtime installs the pinned dependencies, stages and digest-verifies the "
+        "Selecting **Run all** in a fresh supported runtime builds an isolated, hash-locked environment with the pinned dependencies "
+        "(nothing is installed into the notebook kernel, so no restart is needed), stages and digest-verifies the "
         "pinned `facebook/sam-vit-base` snapshot (a 375 MB `model.safetensors`; no pickle is opened anywhere), fetches the first "
         "three row groups of the ADE20K validation parquet shard from the Hugging Face Hub at an immutable revision (about "
         "14 MB over HTTPS range requests; the shard's declared size is checked first and each row group's decoded content is "
@@ -70,7 +85,8 @@ TEMPLATE = {
         "on a 2-vCPU hosted runtime — a CUDA runtime is used automatically when present."
     ),
     "byod": (
-        "After the tutorial workflow completes, set `USE_BYOD = True` in Section 4 and re-run from that cell to upload one zip "
+        "After the tutorial workflow completes, set `USE_BYOD = True` in Section 4 (and `BYOD_PATH` to the zip or directory on Kaggle or "
+        "Jupyter; on Colab an empty path opens the upload dialog) and re-run from that cell to supply one zip "
         "of images with a `<stem>_mask.png` beside each (white = the object; optionally a `labels.csv` of `id`, `file`, "
         "`category`) — at least eight images with sides between 16 and 4096 px. The click and the box are derived from each "
         "mask (its distance-transform maximum and its tight box), then the records pass through the same validation, "
@@ -116,8 +132,12 @@ TEMPLATE = {
         "validation set or any benchmark proper (only one seeded 296-target sample from its first 300 images is scored here), "
         "and any claim that scene-parsing regions stand in for your objects. The repository exposes none of these."
     ),
+    "guided": {"opening": [(
+        "**Who this notebook is for.** A learner who knows basic Python and NumPy, has used Colab or Jupyter and has met binary masks and intersection-over-union, and wants to see what a click or a box means to a promptable segmenter — and what a bounded fine-tuning of its mask decoder changes on a real labelled set. The audience is students and practitioners deciding whether SAM can be adapted to their own labelling convention; no prior experience with SAM, transformers or fine-tuning is assumed — each term is explained where it first matters and again in the **Glossary**. A GPU runtime is strongly recommended (the image encoder is slow on CPU).\n\n**Input → Model → Output.**\n\n| | |\n|---|---|\n| Input | `{{id, image, mask, point, box}}` records; the default is 296 ADE20K targets (three digest-pinned row groups of the validation shard, 300 images) split 180 / 45 / 70 by image, plus a 320 × 240 synthetic scene drawn in code |\n| Model | `facebook/sam-vit-base` (SAM v1, ViT-B, 93.7 M parameters): a frozen image encoder, a frozen prompt encoder and a 4.06 M-parameter mask decoder — the only part that is trained |\n| Output | mean IoU and hit rate of the frozen and the adapted model under the point and the box prompt against two prompt-only baselines, per class; a mask of the synthetic scene before and after; four side-by-side panels; a 16 MB safetensors adapter that reloads with verified mask parity; `result.json` |\n\n**How to use this notebook.** Choose a **GPU** runtime (T4 or better) and then **Runtime → Run all**. Run all completes in one pass: Section 1 installs nothing into the notebook's own Python, so no restart is needed (the recorded hosted run of the previous version needed one; this version removes it). Sections 1–3 are **infrastructure** — the isolated environment, the carried modules and the verified snapshot — and their cells are collapsed; you may run them without studying them. The learning path starts in Section 4. Form fields (`# @param`) are the only values meant to be edited, and the defaults reproduce the recorded run. Before each principal result the notebook asks you to **Predict**; after it comes a collapsible **Check your reasoning** with a worked answer from the recorded Kaggle T4 run of 20 September 2026. **Troubleshooting**, a **Glossary** and a **Conclusion** template are at the end. Budget about fifteen minutes on a T4 (912 s in the recorded run, downloads included); an hour or more on CPU.\n\n**Roadmap:** 1–3 infrastructure → 4 ADE20K targets under a stated selection rule, the split and four refusals *(core concept: the data contract and leakage)* → 5 the inference contract on a synthetic scene *(core concept: three candidates and an uncalibrated predicted IoU)* → 6 two prompt-only baselines and the frozen model under both prompts *(evaluation practice: baselines before model numbers)* → 7 bounded fine-tuning of the mask decoder with epoch selection on both prompts *(core concept: what 4 M of 94 M parameters can learn)* → 8 held-out evaluation and a recorded verdict *(evaluation practice)* → 9 masks by eye, export and reload parity *(engineering)* → conclude."
+    )]},
     "prerequisites": [
-        "- **Runtime:** a fresh supported runtime (Google Colab or Jupyter, Python 3.12). The default path runs on CPU (float32) and uses CUDA automatically when available. The image encoder's cost is fixed by the 1024×1024 working size (about 3 s per image on the build workstation's CPU, 0.17 s on an RTX 5070 Ti), and the default path encodes every image several times (two frozen evaluations, one cached embedding pass for training, per-epoch validation, two adapted evaluations): the build record measured 30.0 s for the 180 training embeddings and 283 s for the six epochs with validation scoring on both prompts on the RTX 5070 Ti, and the whole default path took 415 s there with the snapshot and row groups already cached. A CPU-only or 2-vCPU hosted runtime will take an hour or more. The pinned `torch==2.14.0` install and the 375 MB checkpoint are the large downloads of the run; the three row groups are about 14 MB.",
+        "- **Learner:** basic Python, NumPy and Colab or Jupyter familiarity; no prior experience with SAM or fine-tuning. Prompts, the predicted IoU, the two baselines, the mask decoder, the loss, epoch selection and reload parity are explained where they are first used and again in the Glossary.",
+        "- **Runtime:** a fresh supported **Linux x86_64** runtime (Google Colab, Kaggle or a Linux Jupyter server). Section 1 builds its own Python 3.12.12 environment from a hash-locked list of manylinux wheels, so the Python version of the kernel itself does not matter and nothing is installed into it; a Windows or macOS kernel is not supported. The default path runs on CPU (float32) and uses CUDA automatically when available. The image encoder's cost is fixed by the 1024×1024 working size (about 3 s per image on the build workstation's CPU, 0.17 s on an RTX 5070 Ti), and the default path encodes every image several times (two frozen evaluations, one cached embedding pass for training, per-epoch validation, two adapted evaluations): the build record measured 30.0 s for the 180 training embeddings and 283 s for the six epochs with validation scoring on both prompts on the RTX 5070 Ti, and the whole default path took 415 s there with the snapshot and row groups already cached. A CPU-only or 2-vCPU hosted runtime will take an hour or more. The pinned `torch==2.14.0` install and the 375 MB checkpoint are the large downloads of the run; the three row groups are about 14 MB.",
         "- **Knowledge:** basic Python, NumPy and PIL; what a binary mask and intersection-over-union are; why a self-made reference is a plumbing check and a held-out split under one dataset's labelling convention is a measurement of that convention only.",
         "- **Data contract:** records are `{id, image, mask, point, box}` — `image` a PIL image (or a file decodable by Pillow) with sides within 16..4096 px, `mask` a boolean array of the same height and width (or a mask image, white = target), `point` one `[x, y]` click inside the mask, `box` the `[x0, y0, x1, y1]` box enclosing it, an optional `category` of at most 32 characters. Ids match `[A-Za-z0-9_.:-]{1,64}` and are unique; a dataset needs 8..5,000 records; splitting de-duplicates by decoded pixels so no image lands in two splits. BYOD accepts one zip (or directory) of images with a `<stem>_mask.*` each plus an optional `labels.csv`; the notebook derives the click and the box itself.",
         "- **Validation is structural, not semantic:** every image and mask is decoded, the click is checked to lie inside the mask and the box to enclose it, but nothing checks that the mask outlines what you meant — a mislabelled set is fine-tuned on without complaint.",
@@ -141,7 +161,8 @@ TEMPLATE = {
                 "table is written to `outputs/{stem}_train.csv`.\n\n"
                 "Look for: 300 rows → 296 targets over about 55 classes, image sides within 240..975 px, mask fractions "
                 "within 3..35 %, three digests, and four refusal probes — a duplicate id, a click outside its mask, a box that "
-                "does not enclose the mask, and a dataset too small to use — each rejected before the model does anything."
+                "does not enclose the mask, and a dataset too small to use — each rejected before the model does anything.\n\n"
+                "**Predict:** 300 images go in. Will every image yield a target under the 3..35 % rule, and which kinds of region — small things or large stuff — will the rule favour? Will any of the four probes be accepted?"
             ),
             "code": (
                 "import hashlib\n"
@@ -150,18 +171,36 @@ TEMPLATE = {
                 "import numpy as np\n"
                 "from PIL import Image, ImageDraw\n\n"
                 "USE_BYOD = False  # @param {{type:\"boolean\"}}\n"
+                "BYOD_PATH = ''  # @param {{type:\"string\"}}\n"
                 "SPLIT_SEED = 42  # @param {{type:\"integer\"}}\n\n"
                 "os.makedirs('outputs', exist_ok=True)\n"
-                "if USE_BYOD:\n"
-                "    from google.colab import files\n"
-                "    uploaded = files.upload()\n"
-                "    file_name, payload = next(iter(uploaded.items()))\n"
-                "    byod_zip = Path('work') / 'byod.zip'\n"
-                "    byod_zip.parent.mkdir(parents=True, exist_ok=True)\n"
-                "    byod_zip.write_bytes(payload)\n"
-                "    records = load_byod_dataset(byod_zip)\n"
-                "    splits = split_dataset(records, seed=SPLIT_SEED)\n"
-                "    data_source = 'BYOD (' + file_name + ')'\n"
+                'def byod_source(path, kind):\n'
+                '    """BYOD path first (a zip or a directory; works on Colab, Kaggle and Jupyter); on Colab an empty path opens the upload dialog."""\n'
+                '    if str(path).strip():\n'
+                '        source = Path(str(path).strip()).expanduser()\n'
+                '        if not (source.is_file() or source.is_dir()):\n'
+                "            raise FileNotFoundError(f'BYOD path {{str(source)!r}} does not exist (relative paths start at {{os.getcwd()}}); give the path of one {{kind}}.')\n"
+                '    else:\n'
+                '        try:\n'
+                '            from google.colab import files\n'
+                '        except ImportError:\n'
+                "            raise RuntimeError(f'BYOD is on but BYOD_PATH is empty, and the upload dialog exists only in Google Colab: copy the {{kind}} into this runtime (or attach it as a Kaggle dataset) and set BYOD_PATH.') from None\n"
+                '        uploaded = files.upload()\n'
+                '        if len(uploaded) != 1:\n'
+                "            raise ValueError(f'Upload exactly one {{kind}} (received {{len(uploaded)}} files; a cancelled dialog sends none). Run this cell again.')\n"
+                '        name, payload = next(iter(uploaded.items()))\n'
+                "        source = Path('work') / Path(name).name\n"
+                '        source.parent.mkdir(parents=True, exist_ok=True)\n'
+                '        source.write_bytes(payload)\n'
+                "    if source.is_file() and not source.name.lower().endswith('.zip'):\n"
+                "        raise ValueError(f'{{source.name}}: expected a zip of images with a <stem>_mask.png each, or a directory.')\n"
+                '    return source\n'
+                '\n'
+                'if USE_BYOD:\n'
+                "    byod_path = byod_source(BYOD_PATH, 'zip (or directory) of images with a <stem>_mask.png each')\n"
+                '    records = load_byod_dataset(byod_path)\n'
+                '    splits = split_dataset(records, seed=SPLIT_SEED)\n'
+                "    data_source = 'BYOD (' + byod_path.name + ')'\n"
                 "    raw_rows = {{'byod': len(records)}}\n"
                 "else:\n"
                 "    t0 = time.perf_counter()\n"
@@ -197,6 +236,11 @@ TEMPLATE = {
         },
         {
             "md": (
+                "<details><summary>Check your reasoning</summary>No: the recorded run turned 300 rows into 296 targets (four images had no class component within 3..35 % of the image) over about 55 classes, and the rule favours large *stuff* — the hosted run's by-class table is led by wall (13 test targets), sky (10), floor (8), building (7) and road (7) — because the largest component of a class that covers a third of the image is a wall or a sky, not a cup. All four probes are refused before any model work, each naming its rule; a dataset with fewer than eight records is refused as too small.</details>"
+            ),
+        },
+        {
+            "md": (
                 "## 5. Segment a synthetic scene through the inference contract\n\n"
                 "The inference contract is exercised as the inference-only tutorial exercised it: a deterministic 320×240 RGB "
                 "scene drawn in code — grey background, a dark filled rectangle at `[40, 60, 140, 180]` and a red filled disc "
@@ -211,7 +255,8 @@ TEMPLATE = {
                 "every corpus record. The per-image `evaluation_report` against the self-drawn rectangle is `sample-sanity` "
                 "— plumbing evidence, not a measurement; whether the model is *good at real targets* is what Section 6 "
                 "measures on 70 ADE20K regions. The inference-only card recorded scores `[0.955, 1.012, 0.979]` and "
-                "`mask_iou` 1.000 on this scene."
+                "`mask_iou` 1.000 on this scene.\n\n"
+                "**Predict:** one click inside a crisp dark rectangle on grey. Will the best of the three candidates match the drawn rectangle almost exactly, and can a predicted IoU come out above 1.0?"
             ),
             "code": (
                 "scene = Image.new('RGB', (320, 240), (128, 128, 128))\n"
@@ -256,6 +301,11 @@ TEMPLATE = {
         },
         {
             "md": (
+                '<details><summary>Check your reasoning</summary>Yes to both. The inference-only card recorded predicted IoUs of `[0.955, 1.012, 0.979]` — the middle candidate above 1.0, which is why the score is a ranking, not a probability — and `mask_iou` 1.000 for the selected candidate against the drawn rectangle; in the E2E pre-flight the selected candidate again scored 1.000. A crisp thing on a flat background is the easy case; Section 6 measures the hard one.</details>'
+            ),
+        },
+        {
+            "md": (
                 "## 6. Baselines and the frozen model on the test targets\n\n"
                 "Two prompt-only baselines frame the adaptation, each scored by `segmentation_metrics` (carried in "
                 "`metrics.py`): mean **IoU** against the target mask and the **hit rate** — the fraction of targets reaching "
@@ -266,11 +316,33 @@ TEMPLATE = {
                 "the **box** prompt. Expect the frozen point prompt **below box-fill** — the build record measured 0.564 (hit "
                 "rate 0.60) against 0.614 — because a single click on a wall or a floor is ambiguous to a model trained to "
                 "return *an* object, while the box prompt, which states the extent, reaches 0.784. Read the per-class rows to "
-                "see where the click fails: large stuff regions, not small things."
+                "see where the click fails: large stuff regions, not small things. The cell records whether the frozen box prompt beats the "
+                "centre-disk baseline as a verdict instead of stopping, so a BYOD set that behaves differently still reaches the export.\n\n"
+                "**Predict:** rank the four systems — centre disk, box-fill, the frozen point prompt and the frozen box prompt — by mean IoU on the 70 held-out targets before the cell prints them. Does a model with one click beat a baseline with no model?"
             ),
             "code": (
+                '# Sections 6 and 7 describe the frozen decoder and what one adaptation adds to it, so both start from the pretrained\n'
+                '# mask decoder. The snapshot is taken once, before any training; a re-run restores it instead of scoring or training\n'
+                '# whatever an earlier Section 7 left in the model.\n'
+                'def restore_frozen_decoder():\n'
+                '    """Put the mask-decoder tensors back to the frozen snapshot and forget any adapter, so the pipeline is the pretrained model again."""\n'
+                '    model, _ = pipe._require_model()\n'
+                '    state = model.state_dict()\n'
+                '    model.load_state_dict({{name: value.to(state[name].device, state[name].dtype) for name, value in frozen_decoder_state.items()}}, strict=False)\n'
+                '    model.eval()\n'
+                '    pipe.adapter = None\n'
+                '\n'
+                "if 'frozen_decoder_state' not in globals():\n"
+                '    _model, _ = pipe._require_model()\n'
+                '    _decoder_names = set(_trainable_names(_model))\n'
+                '    frozen_decoder_state = {{name: value.detach().cpu().clone() for name, value in _model.state_dict().items() if name in _decoder_names}}\n'
+                "    print({{'frozen_decoder_snapshot': 'taken', 'tensors': len(frozen_decoder_state), 'adapted': pipe.adapter is not None}})\n"
+                'else:\n'
+                '    restore_frozen_decoder()\n'
+                "    print({{'frozen_decoder_snapshot': 'restored', 'tensors': len(frozen_decoder_state), 'adapted': pipe.adapter is not None}})\n"
+                '\n'
                 "METRICS = ('iou', 'hit_rate')\n"
-                "baseline_box = box_fill_baseline(test_records)\n"
+                'baseline_box = box_fill_baseline(test_records)\n'
                 "baseline_disk = centre_disk_baseline(test_records)\n"
                 "print({{'box_fill_baseline': {{k: round(baseline_box[k], 3) for k in METRICS}}, 'n': baseline_box['n'], 'note': baseline_box['baseline']}})\n"
                 "print({{'centre_disk_baseline': {{k: round(baseline_disk[k], 3) for k in METRICS}}, 'note': baseline_disk['baseline']}})\n"
@@ -281,7 +353,14 @@ TEMPLATE = {
                 "print({{'definitions': frozen_point['definitions'], 'hit_threshold': HIT_THRESHOLD}})\n"
                 "frozen_fields = {{c: {{'n': v['n'], 'point_iou': round(v['iou'], 3), 'box_iou': round(frozen_box['per_category'][c]['iou'], 3)}} for c, v in frozen_point['per_category'].items()}}\n"
                 "print({{'by_class_frozen': dict(sorted(frozen_fields.items(), key=lambda kv: -kv[1]['n']))}})\n"
-                "assert frozen_box['iou'] > baseline_disk['iou']"
+                "# A recorded verdict, not an assert: a BYOD set where the box prompt does not beat the disk still reaches the export.\n"
+                "frozen_verdict = 'above the centre-disk baseline' if frozen_box['iou'] > baseline_disk['iou'] else 'not above the centre-disk baseline'\n"
+                "print({{'frozen_box_vs_centre_disk': frozen_verdict, 'frozen_box_iou': round(frozen_box['iou'], 3), 'centre_disk_iou': round(baseline_disk['iou'], 3)}})"
+            ),
+        },
+        {
+            "md": (
+                "<details><summary>Check your reasoning</summary>In the recorded Kaggle T4 run: centre disk 0.442, frozen point prompt 0.564, box-fill 0.614, frozen box prompt 0.784 (hit rates 0.286, 0.60, 0.657, 0.857). A model with one click lost to a baseline with no model: on ADE20K's whole-region targets a single click is ambiguous, and SAM returns a part often enough to fall below filling the box. The box prompt, which states the extent, is far above both baselines — the verdict printed is `above the centre-disk baseline`.</details>"
             ),
         },
         {
@@ -304,7 +383,9 @@ TEMPLATE = {
                 "four epochs, which gained less on the click and cost the box a tenth, and selection on the point prompt alone, "
                 "which once picked an epoch that cost the box 0.06 — are why the default selects on both prompts. Training is "
                 "one record per step at a small learning rate, so the validation curve is noisy and the same recipe lands "
-                "within a few hundredths of the numbers below from one GPU run to the next."
+                "within a few hundredths of the numbers below from one GPU run to the next. The cell first restores the frozen decoder "
+                "snapshot from Section 6, so a second run (after changing a setting) trains the pretrained decoder again, not the previous adaptation.\n\n"
+                "**Predict:** six epochs, one record per step. Will the validation point IoU rise at every epoch, and will the kept epoch be the last one?"
             ),
             "code": (
                 "EPOCHS = 6  # @param {{type:\"integer\"}}\n"
@@ -317,10 +398,16 @@ TEMPLATE = {
                 "    if 'note' in entry:\n"
                 "        row['note'] = entry['note']\n"
                 "    print(row)\n\n\n"
+                "restore_frozen_decoder()  # every run of this cell trains the frozen decoder, never an earlier adaptation\n"
                 "t0 = time.perf_counter()\n"
                 "adapt_result = pipe.adapt(train_records, val_records, epochs=EPOCHS, lr=LEARNING_RATE, prompts=PROMPTS, progress=report)\n"
                 "adapt_seconds = round(time.perf_counter() - t0, 1)\n"
                 "print({{'trainable_parameters': adapt_result['n_trainable'], 'total_parameters': adapt_result['n_total'], 'embedding_seconds': adapt_result['embedding_seconds'], 'best_epoch': adapt_result['best_epoch'], 'selection': adapt_result['selection'], 'loss': adapt_result['loss'], 'seconds': adapt_seconds}})"
+            ),
+        },
+        {
+            "md": (
+                '<details><summary>Check your reasoning</summary>Not at every epoch, and not necessarily the last. The workstation pre-flight that fixed the recipe logged validation point IoU 0.629 → 0.645 / 0.694 / 0.654 / 0.639 / 0.691 / 0.715 and kept epoch 6 on the mean of both prompts, while the earlier point-only rule once kept epoch 3 of 6; the curve wobbles because each step sees one record. Read the `val_score` column, not the loss, to see which epoch is kept, and expect your own kept epoch to differ.</details>'
             ),
         },
         {
@@ -332,10 +419,12 @@ TEMPLATE = {
                 "**point-prompt IoU** first (the build record measured 0.564 → 0.691, past box-fill's 0.614 and the disk's "
                 "0.442; hit rate 0.60 → 0.79), then the **box-prompt IoU** (0.784 → 0.788: held, because the selection rule "
                 "weighs it), then the per-class rows, where the classes a click reads worst on — wall, building, cabinet, "
-                "seat — gain the most. The cell asserts the adapted point IoU is above the frozen one and reports "
-                "whether it is above box-fill. Seventy targets from one seeded split of one dataset give **no dispersion "
+                "seat — gain the most. The cell records verdicts instead of asserting — whether the adapted point IoU is above the frozen one "
+                "(`improved` / `no gain` / `worse`), above box-fill, and whether the box prompt held — so a BYOD run that does not gain still "
+                "exports and reloads; the verdicts go into the evaluation report and `result.json`. Seventy targets from one seeded split of one dataset give **no dispersion "
                 "estimate**; the deltas are sample-sanity evidence that the adaptation contract works, not a benchmark, and a "
-                "gain on ADE20K's whole-region convention says nothing about a click on *your* objects until you measure it."
+                "gain on ADE20K's whole-region convention says nothing about a click on *your* objects until you measure it.\n\n"
+                "**Predict:** write down a direction and a size for the point-prompt delta and for the box-prompt delta. Will the click pass box-fill, and will the box prompt hold exactly, gain, or slip a little?"
             ),
             "code": (
                 "adapted_point = pipe.evaluate(test_records, prompt='point')\n"
@@ -347,6 +436,10 @@ TEMPLATE = {
                 "comparison['delta_point_vs_box_fill'] = {{metric: round(adapted_point[metric] - baseline_box[metric], 3) for metric in METRICS}}\n"
                 "comparison['delta_box_vs_frozen'] = {{metric: round(adapted_box[metric] - frozen_box[metric], 3) for metric in METRICS}}\n"
                 "comparison['by_class'] = {{c: {{'n': frozen_fields[c]['n'], 'frozen_point': frozen_fields[c]['point_iou'], 'adapted_point': adapted_fields[c]['point_iou'], 'frozen_box': frozen_fields[c]['box_iou'], 'adapted_box': adapted_fields[c]['box_iou']}} for c in sorted(frozen_fields, key=lambda c: -frozen_fields[c]['n'])}}\n"
+                "# Recorded verdicts, not asserts: a BYOD run whose click does not gain still exports, reloads and writes result.json.\n"
+                "delta_point = adapted_point['iou'] - frozen_point['iou']\n"
+                "adaptation_verdict = 'improved' if delta_point > 0 else ('no gain' if delta_point == 0 else 'worse')\n"
+                "comparison['verdicts'] = {{'frozen_box_vs_centre_disk': frozen_verdict, 'adapted_point_vs_frozen_point_iou': adaptation_verdict, 'adapted_point_vs_box_fill': 'above box-fill' if adapted_point['iou'] > baseline_box['iou'] else 'not above box-fill', 'adapted_box_vs_frozen_box_iou': 'held or improved' if adapted_box['iou'] >= frozen_box['iou'] else 'worse'}}\n"
                 "for key, row in comparison.items():\n"
                 "    print({{key: row}})\n"
                 "evaluation_report_payload = {{\n"
@@ -366,8 +459,12 @@ TEMPLATE = {
                 "}}\n"
                 "with open('outputs/{stem}_evaluation_report.json', 'w', encoding='utf-8') as f:\n"
                 "    json.dump(evaluation_report_payload, f, indent=2, ensure_ascii=False)\n"
-                "assert adapted_point['iou'] > frozen_point['iou']\n"
-                "print({{'report': 'outputs/{stem}_evaluation_report.json', 'adapted_point_beats_box_fill': adapted_point['iou'] > baseline_box['iou']}})"
+                "print({{'report': 'outputs/{stem}_evaluation_report.json', 'verdicts': comparison['verdicts']}})"
+            ),
+        },
+        {
+            "md": (
+                "<details><summary>Check your reasoning</summary>In the recorded Kaggle T4 run the point prompt went 0.564 → 0.663 (+0.099; hit rate 0.60 → 0.70) and passed box-fill's 0.614 by 0.049, while the box prompt slipped 0.784 → 0.778 (−0.006; hit rate 0.857 → 0.929). So the verdicts for that run are `improved`, `above box-fill` and `worse` for the box by six thousandths — within the few hundredths the recipe moves from one GPU run to the next (the workstation pre-flight gave 0.691 and 0.788). Wall, building, cabinet and seat gained most on the click.</details>"
             ),
         },
         {
@@ -385,7 +482,8 @@ TEMPLATE = {
                 "history (OUT8). `SAMViTSegmentationPipeline.from_artifact` re-verifies the base snapshot, checks the artifact "
                 "manifest, its digest and its exact tensor set **before** deserialising, refuses any tensor outside the mask "
                 "decoder, and overlays the tensors onto a freshly loaded base — a new object from files, not the in-memory "
-                "model (VER2). The cell asserts identical point-prompt masks on eight test targets (VER4)."
+                "model (VER2). The cell asserts identical point-prompt masks on eight test targets (VER4).\n\n"
+                "**Predict:** the reloaded pipeline is a new object built from files. Will all eight point-prompt masks be identical pixel for pixel, and will the adapted decoder still return the synthetic rectangle at the click?"
             ),
             "code": (
                 "import shutil\n\n"
@@ -443,6 +541,11 @@ TEMPLATE = {
                 "print(sorted(os.listdir('outputs')))"
             ),
         },
+        {
+            "md": (
+                '<details><summary>Check your reasoning</summary>All eight masks identical — the recorded run reported `identical_masks: 8 of 8` with 0 pixels differing, because the reloaded pipeline runs the same tensors on the same device. The adapted decoder still returned the synthetic rectangle at the click (selected-candidate `mask_iou` above 0.98 in the build record): crisp things survive an adaptation to stuff, which is one image of evidence, not a measurement.</details>'
+            ),
+        },
     ],
     "closing": (
         "## Interpretation and limits\n\n"
@@ -472,11 +575,45 @@ TEMPLATE = {
         "the frozen model on an image-disjoint split, and emit the shown machine-readable artifacts — without the repository "
         "being reachable. It does **not** establish benchmark superiority, segmentation quality on any other labelling "
         "convention, calibration of the predicted IoU, or production fitness.\n\n"
-        "**Optional experiments (they do not affect the default path):** set `PROMPTS = 'point'` and read whether the "
-        "click gains more while the box loses more; set `PROMPTS = 'box'` and watch the point prompt barely move; raise "
-        "`EPOCHS` and watch the validation IoU pick the epoch while the loss keeps falling; change `LEARNING_RATE` to "
-        "`1e-4` and read the faster, box-costing climb the build record measured; or bring your own masks through BYOD and "
-        "read the two baselines before the adapted number.\n\n"
+        '## Troubleshooting\n'
+        '\n'
+        '- **Section 1 stops with "This notebook needs a Linux x86_64 runtime"** — use Google Colab, Kaggle or a Linux x86_64 Jupyter server.\n'
+        '- **The uv wheel fails its size/SHA-256 check, or a download in Section 1 times out** — run Section 1 again; a complete environment is reused and an incomplete one is finished. If it repeats, `files.pythonhosted.org` or `pypi.org` is blocked or altered.\n'
+        '- **You re-ran Section 1 on its own** — nothing is lost: it keeps the running worker and every variable. After a session restart, run from the top.\n'
+        '- **"The isolated environment\'s Python process exited"** — usually out of memory; restart the session and choose **Run all**.\n'
+        '- **Section 3 reports a size or SHA-256 mismatch, or cannot reach the Hub** — the message names the file. Delete the folder Section 3 prints as `weights_dir` and run Section 3 again (375 MB).\n'
+        '- **Section 4 refuses a row group** — its decoded SHA-256 or byte total does not match `ROW_GROUP_PINS`: the cached parquet under `weights/ade20k/` is damaged (delete it) or the Hub served something else; nothing is fetched beyond the three pinned row groups.\n'
+        '- **Sections 6–8 are very slow** — the runtime has no GPU: the image encoder costs about 3 s per image on CPU and the default path encodes every image several times. Switch to a GPU runtime and Run all.\n'
+        '- **The frozen or adapted numbers differ from the recorded ones in the second decimal** — expected: one record per step at a small learning rate gives a noisy validation curve, and the recorded T4 and workstation runs themselves differ by a few hundredths. A verdict of `not above the centre-disk baseline` or `no gain` / `worse` is a finding to read, not an error.\n'
+        '- **You re-ran Section 6 or 7 after training** — both restore the frozen decoder snapshot first, so the frozen numbers stay frozen and a second fine-tune starts from the pretrained decoder, never from the previous adaptation.\n'
+        "- **Section 9's parity check fails** — the export or reload is broken; run Sections 7–9 again. Do not use the artifact.\n"
+        '- **BYOD: "BYOD path … does not exist" / "the upload dialog exists only in Google Colab" / "Upload exactly one"** — set `BYOD_PATH` to a zip or a directory in the runtime (it works on Kaggle and Jupyter); on Colab an empty path opens the dialog, and a cancelled dialog stops with that message.\n'
+        '- **A `ValueError` from `load_byod_dataset` or `validate_dataset`** — it names the file and the rule: a missing `<stem>_mask` beside an image, an image side outside 16..4096 px, a mask of another size, fewer than eight records, or a duplicate id.\n'
+        '\n'
+        '## Change one thing (next experiments)\n'
+        '\n'
+        "Each of these changes one default and keeps the rest of the path; Sections 6 and 7 restore the frozen decoder before they run, so the frozen numbers are the fixed reference. Set `PROMPTS = 'point'` and read whether the click gains more while the box loses more; set `PROMPTS = 'box'` and watch the point prompt barely move; raise `EPOCHS` and watch the validation score pick the epoch while the loss keeps falling; change `LEARNING_RATE` to `1e-4` and read the faster, box-costing climb the build record measured; change `SPLIT_SEED` for another draw of the 296 targets; or bring your own masks through BYOD and read the two baselines before the adapted number.\n"
+        '\n'
+        '## Glossary\n'
+        '\n'
+        "- **Promptable segmentation** — one click (a point with a foreground label) or one box in, one object's mask out; SAM returns three candidate masks at different granularities with a predicted IoU each.\n"
+        "- **Predicted IoU** — the decoder's own learned ranking score for each candidate; uncalibrated, it can exceed 1.0, and the conventional rule keeps the highest.\n"
+        '- **IoU / hit rate** — intersection over union of a mask with the target (1 = identical); the hit rate is the fraction of targets with IoU ≥ 0.5 (`HIT_THRESHOLD`).\n'
+        "- **Box-fill / centre-disk baselines** — every pixel inside the box (no model; perfect for a rectangle) and a disk around the click with the target's own area (size given away, shape not).\n"
+        "- **Target selection rule** — the largest 4-connected component of one ADE20K class covering 3..35 % of the image; the click is the mask's distance-transform maximum, the box its tight bounds.\n"
+        '- **Mask decoder** — the two-way transformer, up-scaling head and IoU-prediction head (4,058,340 parameters) that the fine-tune trains; the image and prompt encoders stay frozen.\n'
+        '- **Frozen decoder snapshot** — the pretrained decoder tensors Section 6 keeps once; Sections 6 and 7 restore them before scoring or training, so a re-run never builds on an earlier adaptation.\n'
+        '- **BCE + soft Dice** — the training loss: binary cross-entropy on the 256 × 256 logits plus one minus the soft Dice overlap.\n'
+        "- **Mixed prompts / epoch selection** — each training step uses the record's click or its box by a seeded coin; the kept epoch has the highest mean of the validation point- and box-prompt IoU.\n"
+        '- **Image-disjoint split** — no image (by decoded-pixel digest) appears in two of the 180 / 45 / 70 splits.\n'
+        '- **Reload parity** — the adapter written to disk, loaded onto a fresh base, reproduces the in-memory point-prompt masks pixel for pixel on eight test targets.\n'
+        '- **Isolated environment** — the separate Python 3.12.12 environment Section 1 builds from the hash lock; every later cell runs there.\n'
+        '- **BYOD** — bring your own data: a zip or directory of images with a `<stem>_mask.png` each, read from `BYOD_PATH` or the Colab upload dialog.\n'
+        '\n'
+        '## Conclusion (your notes)\n'
+        '\n'
+        "Before you leave, write three lines in this cell: (1) the frozen point-prompt IoU beside box-fill, and why a click is ambiguous on a wall or a floor; (2) the adapted point and box IoU and the verdicts Section 8 recorded — did the click gain, and did the box hold? (3) which class gained most and what that says about ADE20K's whole-region convention versus the objects you would click on in your own images.\n"
+        '\n'
         "## References\n\n"
         "- Repository README: https://github.com/kurtvalcorza/sam-vit-segmentation-pipeline/blob/main/README.md\n"
         "- Repository model card: https://github.com/kurtvalcorza/sam-vit-segmentation-pipeline/blob/main/MODEL_CARD.md\n"
