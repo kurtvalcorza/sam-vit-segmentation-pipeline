@@ -454,6 +454,37 @@ def split_dataset(
     return {"test": unique[:n_test], "validation": unique[n_test : n_test + n_val], "train": unique[n_test + n_val :]}
 
 
+def byod_minimum_records(
+    *, val_fraction: float = 0.15, test_fraction: float = 0.2, min_records: int = MIN_RECORDS
+) -> int:
+    """Smallest number of distinct images whose `split_dataset` split gives every split `min_records` or more."""
+    for n in range(min_records, MAX_RECORDS + 1):
+        n_test = max(1, round(n * test_fraction))
+        n_val = round(n * val_fraction)
+        if min(n_test, n_val, n - n_test - n_val) >= min_records:
+            return n
+    raise ValueError(f"no dataset of at most {MAX_RECORDS} records gives every split {min_records} records")
+
+
+def check_split_sizes(
+    splits: Mapping[str, Sequence[Mapping[str, Any]]],
+    *,
+    min_records: int = MIN_RECORDS,
+    val_fraction: float = 0.15,
+    test_fraction: float = 0.2,
+) -> dict[str, int]:
+    """Refuse a split smaller than `min_records`, naming the split, its size and the total needed."""
+    sizes = {name: len(records) for name, records in splits.items()}
+    for name, size in sizes.items():
+        if size < min_records:
+            needed = byod_minimum_records(val_fraction=val_fraction, test_fraction=test_fraction, min_records=min_records)
+            raise ValueError(
+                f"the {name} split has {size} records but every split needs at least {min_records}; "
+                f"{sum(sizes.values())} distinct images split into {sizes}. Supply at least {needed} distinct images."
+            )
+    return sizes
+
+
 def load_byod_dataset(path: str | Path) -> list[dict[str, Any]]:
     """Records from a directory or zip holding image files and, for each, a `<stem>_mask.png` (white = target)
     with an optional `labels.csv` (`id`, `file`, `category`); the point and box are derived from the mask."""

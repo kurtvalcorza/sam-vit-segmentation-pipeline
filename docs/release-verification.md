@@ -155,7 +155,9 @@ stated runtime, not general estimates.
 
 ## Current status
 
-**Release-grade.** The `E2E` notebook blob `0112e790` (committed at `4ef608f`) executed top-to-bottom in a clean Kaggle Tesla T4 runtime on 2026-09-20 (11/11 ok (1 restart after install cell), 912.1 s, 13 files, 389 MB fetched from the Hub and digest-verified inside the notebook) with no repository checkout — the REL1/REL10 supported-runtime evidence this file gates on. The local pre-flight rows above are what preceded it and remain history. Any later change to the carried modules or to the notebook produces a new blob, and the registry returns to **Candidate** until a clean run of that blob is recorded here.
+**Candidate** — the notebook was regenerated on 2026-10-09 for the review fixes (SAM-M1..M5, SAM-m1..m3): an isolated uv environment from a hash lock (no in-kernel install, no restart), a frozen-decoder restore on re-runs, a named BYOD split minimum (50 distinct images), sample-path-only expectation checks, and the guided layer. The previous blob `0112e790` (committed at `4ef608f`) passed a clean Kaggle Tesla T4 run on 2026-09-20 (11/11 ok after one restart, 912.1 s); a hosted one-pass run of the new blob is pending and will be recorded in `docs/release-verification.md`.
+
+History: the `E2E` notebook blob `0112e790` (committed at `4ef608f`) executed top-to-bottom in a clean Kaggle Tesla T4 runtime on 2026-09-20 (11/11 ok (1 restart after install cell), 912.1 s, 13 files, 389 MB fetched from the Hub and digest-verified inside the notebook) with no repository checkout — the REL1/REL10 supported-runtime evidence this file gates on. The local pre-flight rows above are what preceded it and remain history. Any later change to the carried modules or to the notebook produces a new blob, and the registry returns to **Candidate** until a clean run of that blob is recorded here.
 
 Facts a reviewer should weigh: the sample's targets are chosen by area (largest component covering 3..35 % of the
 image), which makes them mostly *stuff* regions — wall, sky, floor, road, ceiling — where a single click is

@@ -87,6 +87,7 @@ class _Shell:
         self.input_transformers_cleanup: list = []
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="the worker protocol uses Linux pass_fds (as in owlv2-detection-pipeline)")
 def test_swp_r_section_1_is_idempotent_and_keeps_the_live_worker(tmp_path, monkeypatch, capsys):
     """Re-running the Section 1 cell reuses the matching environment (no download) and keeps the live worker, so the
     variables later cells created survive and the cells after it are not stranded."""
