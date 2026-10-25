@@ -210,7 +210,7 @@ def test_swp_g_checkpoint_answers_quote_the_recorded_runs():
     for number in hosted + preflight:
         assert number in record, number
     assert all(n in checks[2] for n in ("0.442", "0.564", "0.614", "0.784"))
-    assert all(n in checks[4] for n in ("0.564", "0.688", "0.614", "0.074", "0.784", "0.779", "0.691", "0.788"))
+    assert all(n in checks[4] for n in ("0.564", "0.688", "0.614", "0.074", "0.784", "0.793", "0.691", "0.788"))
     assert "0.629" in checks[3] and "0.715" in checks[3]
 
 
