@@ -178,7 +178,7 @@ def test_m1_expectations_name_their_run():
     assert "wall, building, cabinet, seat — gain the most" not in markdown
     assert "Wall, building, cabinet and seat gained most" not in markdown
     assert "moved only 0.402 → 0.419" not in markdown  # T78-1: contradicted by the hosted T4 run
-    assert "gained 0.402 → 0.548" in markdown
+    assert "0.402 → 0.415 to 0.548" in markdown  # range over the recorded hosted runs (2026-10-25 ruling)
     for match in re.finditer(r"0\.691", markdown):
         window = markdown[max(0, match.start() - 200): match.end() + 200]
         assert "pre-flight" in window, window
