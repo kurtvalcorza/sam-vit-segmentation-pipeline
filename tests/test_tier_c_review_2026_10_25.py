@@ -19,8 +19,8 @@ def test_t78_1_worked_answers_quote_a_labelled_hosted_run():
     for stale in ("the recorded Kaggle T4 run kept epoch 3", "moved only 0.402 → 0.419", "+0.099",
                   "In the recorded Kaggle T4 run", "recorded Kaggle Tesla T4 run of the previous version"):
         assert stale not in md, stale
-    assert "hosted Colab T4 run of an earlier blob (`edfa7ad6`, 2026-10-09)" in md
-    assert "0.564 → 0.688 (+0.124" in md and "gained 0.402 → 0.548" in md
+    assert "hosted Colab T4 run of blob `edfa7ad6` (2026-10-09)" in md
+    assert "0.564 → 0.616 to 0.688 (+0.051 to +0.124" in md and "wall 0.402 → 0.415 to 0.548" in md
 
 
 def test_t78_2_dat9_overlap_statement():
