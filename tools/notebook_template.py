@@ -80,8 +80,8 @@ TEMPLATE = {
         "per class, re-segments the scene and four held-out targets with the adapted decoder, exports the adapter as "
         "safetensors with a manifest, and reloads that artifact into a fresh pipeline to verify mask parity. The default path "
         "needs no repository clone, no DIMER worker or service, no credential, no upload dialog and no configuration edit "
-        "(NOTEBOOK_SPEC 2.2 §5). Choose a GPU runtime (Colab T4): the recorded Kaggle Tesla T4 run of the previous version took "
-        "912.1 s with downloads, and an RTX 5070 Ti pre-flight 415.1 s with the snapshot and row groups cached. On CPU the image "
+        "(NOTEBOOK_SPEC 2.5 §5). Choose a GPU runtime (Colab T4): the hosted Colab T4 run of an earlier blob (`edfa7ad6`, 2026-10-09) took "
+        "738.7 s with downloads, and an RTX 5070 Ti pre-flight (2026-09-20) 415.1 s with the snapshot and row groups cached. On CPU the image "
         "encoder costs about 3.5 s per image at the fixed 1024×1024 working size and the default path runs about 1,160 encodes, "
         "so a CPU run is *estimated* (not measured on a hosted CPU) at more than an hour on a 2-vCPU runtime. CUDA is used "
         "automatically when present."
@@ -98,7 +98,7 @@ TEMPLATE = {
         "optional and never part of the default path."
     ),
     "intro": (
-        "`facebook/sam-vit-base` is the Segment Anything Model of Kirillov et al. (2023) in its smallest published size: a "
+        "`facebook/sam-vit-base` is the Segment Anything Model of Kirillov et al. [1] in its smallest published size: a "
         "ViT-B image encoder that embeds a 1024×1024 padded image once, a prompt encoder for clicks and boxes, and a "
         "lightweight two-way-transformer mask decoder that turns the two embeddings into up to three candidate masks at "
         "256×256 with a predicted IoU each (93,735,472 parameters, of which the decoder is 4,058,340; published under the "
@@ -139,6 +139,12 @@ TEMPLATE = {
     )]},
     "prerequisites": [
         "- **Learner:** basic Python, NumPy and Colab or Jupyter familiarity; no prior experience with SAM or fine-tuning. Prompts, the predicted IoU, the two baselines, the mask decoder, the loss, epoch selection and reload parity are explained where they are first used and again in the Glossary.",
+        "- **Overlap with the training data:** SAM was trained on SA-1B, 11 million licensed photographs with 1.1 billion automatically "
+        "generated masks [1] (model card). The evaluation images are ADE20K validation images [2], drawn from the SUN and Places collections. "
+        "No overlap between the two is documented, but SA-1B does not publish the source of each image, so near-duplicate scenes cannot be "
+        "ruled out: the overlap is inferred to be unlikely, not verified. The 70 test targets are held out from this notebook's decoder "
+        "fine-tune only, not from SAM's pretraining, so read the frozen numbers as a measurement on images SAM may have seen something like, "
+        "not as an out-of-distribution test.",
         "- **Runtime:** a fresh supported **Linux x86_64** runtime (Google Colab, Kaggle or a Linux Jupyter server). Section 1 builds its own Python 3.12.12 environment from a hash-locked list of manylinux wheels, so the Python version of the kernel itself does not matter and nothing is installed into it; a Windows or macOS kernel is not supported. The default path runs on CPU (float32) and uses CUDA automatically when available. The image encoder's cost is fixed by the 1024×1024 working size (about 3 s per image on the build workstation's CPU, 0.17 s on an RTX 5070 Ti), and the default path encodes every image several times (two frozen evaluations, one cached embedding pass for training, per-epoch validation, two adapted evaluations): the build record measured 30.0 s for the 180 training embeddings and 283 s for the six epochs with validation scoring on both prompts on the RTX 5070 Ti, and the whole default path took 415 s there with the snapshot and row groups already cached. No CPU run of the whole path has been recorded: about 1,160 image encodes at about 3.5 s each on the build workstation's CPU *estimates* about 70 minutes there, and a 2-vCPU hosted CPU is slower, so choose a GPU runtime (Colab T4). The pinned `torch==2.14.0` install and the 375 MB checkpoint are the large downloads of the run; the three row groups are about 14 MB.",
         "- **Knowledge:** basic Python, NumPy and PIL; what a binary mask and intersection-over-union are; why a self-made reference is a plumbing check and a held-out split under one dataset's labelling convention is a measurement of that convention only.",
         "- **Data contract:** records are `{id, image, mask, point, box}` — `image` a PIL image (or a file decodable by Pillow) with sides within 16..4096 px, `mask` a boolean array of the same height and width (or a mask image, white = target), `point` one `[x, y]` click inside the mask, `box` the `[x0, y0, x1, y1]` box enclosing it, an optional `category` of at most 32 characters. Ids match `[A-Za-z0-9_.:-]{1,64}` and are unique; a dataset needs 8..5,000 records, and because every split is validated on its own a BYOD set needs at least **50** distinct images (test 10 / validation 8 / train 32 at the minimum); splitting de-duplicates by decoded pixels so no image lands in two splits. BYOD accepts one zip (or directory) of images with a `<stem>_mask.*` each plus an optional `labels.csv`; the notebook derives the click and the box itself.",
@@ -367,7 +373,7 @@ TEMPLATE = {
         },
         {
             "md": (
-                "<details><summary>Check your reasoning</summary>In the recorded Kaggle T4 run: centre disk 0.442, frozen point prompt 0.564, box-fill 0.614, frozen box prompt 0.784 (hit rates 0.286, 0.60, 0.657, 0.857). A model with one click lost to a baseline with no model: on ADE20K's whole-region targets a single click is ambiguous, and SAM returns a part often enough to fall below filling the box. The box prompt, which states the extent, is far above both baselines — the verdict printed is `above the centre-disk baseline`.</details>"
+                "<details><summary>Check your reasoning</summary>In the hosted Colab T4 run of an earlier blob (`edfa7ad6`, 2026-10-09), not re-run here: centre disk 0.442, frozen point prompt 0.564, box-fill 0.614, frozen box prompt 0.784 (hit rates 0.286, 0.60, 0.657, 0.857). A model with one click lost to a baseline with no model: on ADE20K's whole-region targets a single click is ambiguous, and SAM returns a part often enough to fall below filling the box. The box prompt, which states the extent, is far above both baselines — the verdict printed is `above the centre-disk baseline`.</details>"
             ),
         },
         {
@@ -384,8 +390,8 @@ TEMPLATE = {
                 "epoch is scored on the 45 validation targets with both prompts, and the epoch with the highest **mean of the "
                 "validation point- and box-prompt IoU** is kept — the box term keeps an epoch that taught the click at the "
                 "box's expense from being chosen.\n\n"
-                "In the RTX 5070 Ti pre-flight the training loss fell from about 0.39 to 0.29 while the validation point IoU climbed from 0.629 towards 0.715 over six "
-                "epochs (epoch 6 kept); the recorded Kaggle T4 run kept epoch 3. The decoder is learning *which* of its candidate granularities this dataset means by a click, which "
+                "In the hosted Colab T4 run of an earlier blob (`edfa7ad6`, 2026-10-09) the training loss fell from 0.39 to 0.26 while the validation point IoU went from 0.629 to 0.744 over six "
+                "epochs, not monotonically (epoch 6 kept); an earlier Kaggle T4 run of a previous blob (2026-09-20) kept epoch 3, so the kept epoch varies between runs. The decoder is learning *which* of its candidate granularities this dataset means by a click, which "
                 "180 targets are enough to teach. The build record's counter-examples — the same recipe at twice the rate for "
                 "four epochs, which gained less on the click and cost the box a tenth, and selection on the point prompt alone, "
                 "which once picked an epoch that cost the box 0.06 — are why the default selects on both prompts. Training is "
@@ -414,7 +420,7 @@ TEMPLATE = {
         },
         {
             "md": (
-                '<details><summary>Check your reasoning</summary>Not at every epoch, and not necessarily the last. The workstation pre-flight that fixed the recipe logged validation point IoU 0.629 → 0.645 / 0.694 / 0.654 / 0.639 / 0.691 / 0.715 and kept epoch 6 on the mean of both prompts, while the earlier point-only rule once kept epoch 3 of 6; the curve wobbles because each step sees one record. Read the `val_score` column, not the loss, to see which epoch is kept, and expect your own kept epoch to differ.</details>'
+                '<details><summary>Check your reasoning</summary>Not at every epoch, and not necessarily the last. The hosted Colab T4 run of an earlier blob (`edfa7ad6`, 2026-10-09) logged validation point IoU 0.629 → 0.700 / 0.723 / 0.708 / 0.623 / 0.664 / 0.744 and kept epoch 6 on the mean of both prompts; the RTX 5070 Ti pre-flight (local build record, 2026-09-20, an earlier revision), which fixed the recipe, logged 0.629 → 0.645 / 0.694 / 0.654 / 0.639 / 0.691 / 0.715 and also kept epoch 6, while the earlier point-only rule once kept epoch 3 of 6; the curve wobbles because each step sees one record. Read the `val_score` column, not the loss, to see which epoch is kept, and expect your own kept epoch to differ.</details>'
             ),
         },
         {
@@ -423,12 +429,12 @@ TEMPLATE = {
                 "The test targets were never used for training or epoch selection, and no image appears in two splits. The "
                 "adapted decoder is scored exactly as the frozen one was in Section 6 — point prompt and box prompt — the "
                 "four systems are put side by side, and the per-class breakdown is repeated. Read it in this order: the "
-                "**point-prompt IoU** first (0.564 → 0.663 in the recorded Kaggle T4 run and → 0.691 in the RTX 5070 Ti pre-flight, so "
-                "expect roughly 0.65–0.71, past box-fill's 0.614 and the disk's 0.442), then the **box-prompt IoU** (0.784 → 0.778 "
-                "on the T4 and → 0.788 in the pre-flight: within about 0.01 of frozen because the selection rule weighs it, and it can "
-                "slip), then the per-class rows: on the T4 the click gained most on building, cabinet and seat, while wall — the largest "
-                "class, 13 targets — moved only 0.402 → 0.419, and the box prompt lost on some classes (pier 0.926 → 0.603, person "
-                "0.774 → 0.625, tree 0.938 → 0.822). The cell records verdicts — whether the adapted point IoU is above the frozen one "
+                "**point-prompt IoU** first (0.564 → 0.688 in the hosted Colab T4 run of an earlier blob (`edfa7ad6`, 2026-10-09), → 0.663 in an earlier Kaggle T4 run of a previous blob and → 0.691 in the RTX 5070 Ti pre-flight, so "
+                "expect roughly 0.65–0.71, past box-fill's 0.614 and the disk's 0.442; none of these was re-run here), then the **box-prompt IoU** (0.784 → 0.779 "
+                "in the hosted T4 run and → 0.788 in the pre-flight: within about 0.01 of frozen because the selection rule weighs it, and it can "
+                "slip), then the per-class rows: in the hosted T4 run the click gained on most classes, by the most on small ones (cabinet 0.136 → 0.458, seat 0.026 → 0.312, tree 0.185 → 0.679) and on building (0.373 → 0.637), while wall — the largest "
+                "class, 13 targets — gained 0.402 → 0.548; the box prompt lost on some classes (tree 0.938 → 0.765, seat "
+                "0.844 → 0.742, person 0.774 → 0.577). Classes with one to three targets swing between runs, so read them as examples, not findings. The cell records verdicts — whether the adapted point IoU is above the frozen one "
                 "(`improved` / `no gain` / `worse`), above box-fill, and whether the box prompt held — in the evaluation report and "
                 "`result.json`. On BYOD a run that does not gain still exports and reloads; on the ADE20K sample a click that does "
                 "not improve stops the run with a named error, because both recorded runs gained about a tenth. Seventy targets from one seeded split of one dataset give **no dispersion "
@@ -476,7 +482,7 @@ TEMPLATE = {
         },
         {
             "md": (
-                "<details><summary>Check your reasoning</summary>In the recorded Kaggle T4 run the point prompt went 0.564 → 0.663 (+0.099; hit rate 0.60 → 0.70) and passed box-fill's 0.614 by 0.049, while the box prompt slipped 0.784 → 0.778 (−0.006; hit rate 0.857 → 0.929). So the verdicts for that run are `improved`, `above box-fill` and `worse` for the box by six thousandths — within the few hundredths the recipe moves from one GPU run to the next (the workstation pre-flight gave 0.691 and 0.788). On the click, building (0.373 → 0.564), cabinet (0.136 → 0.421) and seat (0.026 → 0.361) gained most, while wall, the largest class, moved only 0.402 → 0.419; the box prompt lost on pier, person and tree.</details>"
+                "<details><summary>Check your reasoning</summary>In the hosted Colab T4 run of an earlier blob (`edfa7ad6`, 2026-10-09), not re-run here, the point prompt went 0.564 → 0.688 (+0.124; hit rate 0.60 → 0.743) and passed box-fill's 0.614 by 0.074, while the box prompt slipped 0.784 → 0.779 (−0.005; hit rate 0.857 → 0.929). So the verdicts for that run are `improved`, `above box-fill` and `worse` for the box by five thousandths — within the few hundredths the recipe moves from one GPU run to the next (an earlier Kaggle T4 run of a previous blob gave 0.663 and 0.778, the workstation pre-flight 0.691 and 0.788). On the click, building (0.373 → 0.637), cabinet (0.136 → 0.458), seat (0.026 → 0.312) and tree (0.185 → 0.679) gained most, and wall, the largest class, gained 0.402 → 0.548; the box prompt lost on tree, seat and person. Your own per-class rows will differ.</details>"
             ),
         },
         {
@@ -564,8 +570,8 @@ TEMPLATE = {
         "A single click on an ADE20K region is ambiguous to the frozen SAM decoder — it returns a part, or the region with its "
         "neighbours, often enough that the mean IoU (0.564 in the recorded runs) sits below simply filling the box (0.614) — and "
         "a bounded fine-tuning of the 4-million-parameter mask decoder on 180 targets under mixed prompts resolves the "
-        "ambiguity the way this dataset does (point IoU 0.663 with hit rate 0.60 → 0.70 in the recorded Kaggle T4 run; 0.691 "
-        "in the RTX 5070 Ti pre-flight) while keeping the box prompt within about 0.01 of frozen (0.784 → 0.778 on the T4, → "
+        "ambiguity the way this dataset does (point IoU 0.688 with hit rate 0.60 → 0.743 in the hosted Colab T4 run of an earlier blob (`edfa7ad6`, 2026-10-09); 0.663 in an earlier Kaggle T4 run of a previous blob; 0.691 "
+        "in the RTX 5070 Ti pre-flight; none re-run here) while keeping the box prompt within about 0.01 of frozen (0.784 → 0.779 in the hosted T4 run, → "
         "0.788 in the pre-flight), with a 16 MB adapter that reloads mask-for-mask. What the run shows: the adaptation "
         "contract works end to end on a real labelled set, and the numbers it produces are read on two prompts, per class, "
         "against two prompt-only baselines and the frozen model rather than in isolation.\n\n"
@@ -597,6 +603,7 @@ TEMPLATE = {
         '- **Section 3 reports a size or SHA-256 mismatch, or cannot reach the Hub** — the message names the file. Delete the folder Section 3 prints as `weights_dir` and run Section 3 again (375 MB).\n'
         '- **Section 4 refuses a row group** — its decoded SHA-256 or byte total does not match `ROW_GROUP_PINS`: the cached parquet under `weights/ade20k/` is damaged (delete it) or the Hub served something else; nothing is fetched beyond the three pinned row groups.\n'
         '- **Sections 6–8 are very slow** — the runtime has no GPU: the image encoder costs about 3 s per image on CPU and the default path encodes every image several times. Switch to a GPU runtime and Run all.\n'
+        '- **Where the environment lives** — Section 1 builds it in a folder named `dimer_isolated_env_<lock digest>` in the working directory. Set the environment variable `DIMER_ISOLATED_ENV` before Section 1 to build it somewhere else.\n'
         '- **The frozen or adapted numbers differ from the recorded ones in the second decimal** — expected: one record per step at a small learning rate gives a noisy validation curve, and the recorded T4 and workstation runs themselves differ by a few hundredths. A verdict of `not above the centre-disk baseline` or `no gain` / `worse` is a finding to read, not an error.\n'
         '- **You re-ran Section 6 or 7 after training** — both restore the frozen decoder snapshot first, so the frozen numbers stay frozen and a second fine-tune starts from the pretrained decoder, never from the previous adaptation.\n'
         "- **Section 9's parity check fails** — the export or reload is broken; run Sections 7–9 again. Do not use the artifact.\n"
@@ -632,13 +639,11 @@ TEMPLATE = {
         "Before you leave, write three lines in this cell: (1) the frozen point-prompt IoU beside box-fill, and why a click is ambiguous on a wall or a floor; (2) the adapted point and box IoU and the verdicts Section 8 recorded — did the click gain, and did the box hold? (3) which class gained most and what that says about ADE20K's whole-region convention versus the objects you would click on in your own images.\n"
         '\n'
         "## References\n\n"
-        "- Repository README: https://github.com/kurtvalcorza/sam-vit-segmentation-pipeline/blob/main/README.md\n"
-        "- Repository model card: https://github.com/kurtvalcorza/sam-vit-segmentation-pipeline/blob/main/MODEL_CARD.md\n"
-        "- Weight provenance: https://github.com/kurtvalcorza/sam-vit-segmentation-pipeline/blob/main/docs/WEIGHTS.md\n"
-        "- Upstream model: https://huggingface.co/{MODEL_ID}\n"
-        "- Upstream code: https://github.com/facebookresearch/segment-anything\n"
-        "- Segment Anything (Kirillov et al., ICCV 2023): https://arxiv.org/abs/2304.02643\n"
-        "- ADE20K scene parsing (Zhou et al., CVPR 2017; IJCV 2019; BSD-3-Clause): https://github.com/CSAILVision/sceneparsing — parquet conversion https://huggingface.co/datasets/zhoubolei/scene_parse_150\n"
-        "- DIMER Notebook Specification 2.2 and Model Card Specification 1.1 (fleet specs in the ml-worker repository)"
+        "[1] A. Kirillov, E. Mintun, N. Ravi, H. Mao, C. Rolland, L. Gustafson, T. Xiao, S. Whitehead, A. C. Berg, W.-Y. Lo, P. Dollár, and R. Girshick, \"Segment anything,\" in *Proc. IEEE/CVF Int. Conf. Comput. Vis. (ICCV)*, 2023. [Online]. Available: https://arxiv.org/abs/2304.02643\n\n"
+        "[2] B. Zhou, H. Zhao, X. Puig, S. Fidler, A. Barriuso, and A. Torralba, \"Scene parsing through ADE20K dataset,\" in *Proc. IEEE Conf. Comput. Vis. Pattern Recognit. (CVPR)*, 2017 (BSD-3-Clause). [Online]. Available: https://github.com/CSAILVision/sceneparsing; parquet conversion: https://huggingface.co/datasets/zhoubolei/scene_parse_150\n\n"
+        "[3] Meta AI Research, \"segment-anything,\" GitHub repository. [Online]. Available: https://github.com/facebookresearch/segment-anything\n\n"
+        "[4] Upstream model checkpoint. [Online]. Available: https://huggingface.co/{MODEL_ID}\n\n"
+        "[5] K. Valcorza, \"sam-vit-segmentation-pipeline,\" README, model card and weight provenance. [Online]. Available: https://github.com/kurtvalcorza/sam-vit-segmentation-pipeline/blob/main/README.md, https://github.com/kurtvalcorza/sam-vit-segmentation-pipeline/blob/main/docs/WEIGHTS.md; model card: https://github.com/kurtvalcorza/sam-vit-segmentation-pipeline/blob/main/MODEL_CARD.md\n\n"
+        "[6] DIMER Notebook Specification 2.5 and Model Card Specification 1.1, fleet specs in the ml-worker repository."
     ),
 }
