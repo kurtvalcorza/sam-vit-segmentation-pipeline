@@ -26,6 +26,7 @@ def test_varying_quantities_are_stated_as_ranges_over_the_named_runs():
     md = _markdown()
     assert "`[0.957, 1.0116, 0.982]`" in md
     assert "expect roughly 0.61–0.69" in md and "0.784 → 0.768 to 0.779" in md
-    assert "epoch 6 in the first, epoch 2 in the second and epoch 3 in the Kaggle T4 run of blob `0112e790`" in md
+    assert ("epoch 6 in the first, epoch 2 in the second and epoch 3 in the Kaggle T4 run of blob `0112e790`"
+            in md)
     assert "every recorded hosted run gained (by 0.051 to 0.124)" in md
     assert "738.7 s to 912.1 s across the recorded hosted runs" in md
