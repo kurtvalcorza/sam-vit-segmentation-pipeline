@@ -177,7 +177,8 @@ def test_m1_expectations_name_their_run():
     assert "That is the claim" not in markdown
     assert "wall, building, cabinet, seat — gain the most" not in markdown
     assert "Wall, building, cabinet and seat gained most" not in markdown
-    assert "moved only 0.402 → 0.419" in markdown
+    assert "moved only 0.402 → 0.419" not in markdown  # T78-1: contradicted by the hosted T4 run
+    assert "0.402 → 0.415 to 0.548" in markdown  # range over the recorded hosted runs (2026-10-25 ruling)
     for match in re.finditer(r"0\.691", markdown):
         window = markdown[max(0, match.start() - 200): match.end() + 200]
         assert "pre-flight" in window, window
@@ -196,5 +197,6 @@ def test_m3_cpu_time_is_an_estimate_and_a_gpu_is_recommended():
 
 def test_s2_declares_spec_2_2_and_s5_drops_the_pillow_mode_argument():
     nb = _nb()
-    assert nb["metadata"]["dimer"]["notebook_spec"] == "2.2"
+    assert nb["metadata"]["dimer"]["notebook_spec"] == "2.5"
+    assert nb["metadata"]["dimer"]["notebook_kind"] == "TUTORIAL"
     assert "mode='RGB'" not in "\n".join(_code(nb))

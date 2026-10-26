@@ -200,17 +200,17 @@ RECORD = ROOT / "docs" / "release-verification.md"
 
 
 def test_swp_g_checkpoint_answers_quote_the_recorded_runs():
-    """Every number in a Check-your-reasoning answer is in the recorded 2026-09-20 Kaggle T4 run or the recorded pre-flights."""
+    """Every number in a Check-your-reasoning answer is in a recorded run (hosted T4 runs or pre-flights)."""
     markdown = "\n".join(c["source"] for c in _nb(NB)["cells"] if c["cell_type"] == "markdown")
     checks = re.findall(r"<details><summary>Check your reasoning</summary>(.*?)</details>", markdown, re.S)
     assert len(checks) == 6
     record = RECORD.read_text(encoding="utf-8")
-    hosted = ("0.442", "0.614", "0.564", "0.663", "0.784", "0.778", "0.286", "0.657", "0.857", "0.929", "0.099", "0.049", "-0.006", "912.1 s")
+    hosted = ("0.442", "0.614", "0.564", "0.688", "0.784", "0.779", "0.286", "0.657", "0.857", "0.929", "0.744", "738.7 s", "0.663", "0.778")
     preflight = ("0.691", "0.788", "0.629", "0.645", "0.694", "0.654", "0.639", "0.715", "[0.955, 1.012, 0.979]", "1.000", "8/8")
     for number in hosted + preflight:
         assert number in record, number
     assert all(n in checks[2] for n in ("0.442", "0.564", "0.614", "0.784"))
-    assert all(n in checks[4] for n in ("0.564", "0.663", "0.614", "0.049", "0.784", "0.778", "0.691", "0.788"))
+    assert all(n in checks[4] for n in ("0.564", "0.688", "0.614", "0.074", "0.784", "0.793", "0.691", "0.788"))
     assert "0.629" in checks[3] and "0.715" in checks[3]
 
 
