@@ -82,8 +82,9 @@ TEMPLATE = {
         "needs no repository clone, no DIMER worker or service, no credential, no upload dialog and no configuration edit "
         "(NOTEBOOK_SPEC 2.5 §5). Choose a GPU runtime (Colab T4): on a hosted T4 with downloads the recorded runs of the default path took between 12.3 and 15.2 minutes "
         "(738.7 s in the hosted Colab T4 run of blob `edfa7ad6` (2026-10-09), 771.3 s in the hosted Colab T4 run of blob `2b2e4b2b` (2026-10-25), 762.2 s in the hosted Colab T4 run of blob `9a507580` (2026-10-25), 912.1 s in the Kaggle T4 run of blob `0112e790` (2026-09-20); yours may differ), and an RTX 5070 Ti pre-flight (local, 2026-09-20) took 415.1 s with the snapshot and row groups cached. On CPU the image "
-        "encoder costs about 3.5 s per image at the fixed 1024×1024 working size and the default path runs about 1,160 encodes, "
-        "so a CPU run is *estimated* (not measured on a hosted CPU) at more than an hour on a 2-vCPU runtime. CUDA is used "
+        "encoder took about 3.5 s per image at the fixed 1024×1024 working size in the 2026-10-02 review's workstation probe (28.2 s for "
+        "8 encodes, half the threads), and the default path runs about 1,160 encodes, so at that rate a CPU run would take more than "
+        "an hour (an extrapolation from that probe; a 2-vCPU hosted runtime is slower). CUDA is used "
         "automatically when present."
     ),
     "byod": (
@@ -169,7 +170,10 @@ TEMPLATE = {
                 "table is written to `outputs/{stem}_train.csv`.\n\n"
                 "Look for: 300 rows → 296 targets over about 55 classes, image sides within 240..975 px, mask fractions "
                 "within 3..35 %, three digests, and four refusal probes — a duplicate id, a click outside its mask, a box that "
-                "does not enclose the mask, and a dataset too small to use — each rejected before the model does anything.\n\n"
+                "does not enclose the mask, and a dataset too small to use — each rejected before the model does anything. With "
+                "`USE_BYOD = True`, a refused input stops the cell with one line, `Refused: <file>: <reason and fix>`, and removes the "
+                "earlier run's results from the session and this notebook's exports from `outputs/`, so nothing from that run can pass as a "
+                "result of your data; fix the named file and run this cell again.\n\n"
                 "**Predict:** 300 images go in. Will every image yield a target under the 3..35 % rule, and which kinds of region — small things or large stuff — will the rule favour? Will any of the four probes be accepted?"
             ),
             "code": (
@@ -182,45 +186,90 @@ TEMPLATE = {
                 "BYOD_PATH = ''  # @param {{type:\"string\"}}\n"
                 "SPLIT_SEED = 42  # @param {{type:\"integer\"}}\n\n"
                 "os.makedirs('outputs', exist_ok=True)\n"
+                'import zipfile\n\n\n'
+                'class BYODRefusal(ValueError):\n'
+                '    """A refused BYOD input: ``BYODRefusal(file_name, reason_and_fix)``."""\n\n'
+                '    dimer_refusal = True\n\n'
+                '    def __init__(self, file_name, reason):\n'
+                '        super().__init__(f"{{file_name}}: {{reason}}")\n'
+                '        self.file_name = file_name\n'
+                '        self.reason = reason\n\n'
+                '    def _render_traceback_(self):\n'
+                '        return [f"Refused: {{self}}"]\n\n\n'
+                '# The results an earlier run of this cell and the sections after it left in this session. A refused input removes them,\n'
+                "# and this notebook's exports in outputs/, so none of them can pass as a result of the refused input (DAT20).\n"
+                'RUN_RESULT_NAMES = (\n'
+                "    'records', 'splits', 'data_source', 'raw_rows', 't0', 'corpus_groups', 'corpus', 'dataset_manifests', 'disjoint', 'train_records', 'val_records',\n"
+                "    'test_records', 'manifest', 'top', 'example', 'probes', 'probe', 'scene', 'draw', 'rectangle_box', 'scene_reference', 'scene_points',\n"
+                "    'scene_labels', 'scene_name', 'scene_sha256', 'input_manifest', 'frozen_scene_result', 'frozen_scene', 'frozen_decoder_state', 'baseline_box',\n"
+                "    'baseline_disk', 'frozen_point', 'frozen_box', 'frozen_fields', 'frozen_verdict', 'adapt_result', 'adapt_seconds', 'adapted_point',\n"
+                "    'adapted_box', 'adapted_val', 'adapted_fields', 'comparison', 'delta_point', 'adaptation_verdict', 'key', 'row', 'evaluation_report_payload',\n"
+                "    'f', 'adapted_scene_result', 'adapted_scene', 'examples_dir', 'frozen_base', 'record', 'image', 'prompted', 'marker', 'x', 'y', 'panels',\n"
+                "    'sheet', 'i', 'panel', 'artifact_dir', 'artifact_manifest', 'reloaded', 'before', 'after', 'parity', 'result_payload',\n"
+                ')\n\n\n'
+                'def refuse_byod(file_name, reason):\n'
+                '    """Remove the earlier run\'s results, then stop the cell with one Refused: line naming the file and the fix."""\n'
+                '    import shutil\n\n'
+                '    for name in RUN_RESULT_NAMES:\n'
+                '        globals().pop(name, None)\n'
+                "    for path in Path('outputs').glob('sam_vit_segmentation_*'):\n"
+                '        shutil.rmtree(path) if path.is_dir() else path.unlink()\n'
+                "    reason = str(reason).removeprefix(f'{{file_name}}: ').rstrip('. ')\n"
+                "    if 'again' not in reason:\n"
+                "        reason += '; fix the input and run this cell again'\n"
+                "    raise BYODRefusal(file_name, reason + ' (the earlier results of this session were removed).') from None\n\n\n"
                 'def byod_source(path, kind):\n'
                 '    """BYOD path first (a zip or a directory; works on Colab, Kaggle and Jupyter); on Colab an empty path opens the upload dialog."""\n'
                 '    if str(path).strip():\n'
                 '        source = Path(str(path).strip()).expanduser()\n'
                 '        if not (source.is_file() or source.is_dir()):\n'
-                "            raise FileNotFoundError(f'BYOD path {{str(source)!r}} does not exist (relative paths start at {{os.getcwd()}}); give the path of one {{kind}}.')\n"
+                "            raise BYODRefusal(source.name or str(source), f'BYOD path {{str(source)!r}} does not exist (relative paths start at {{os.getcwd()}}); give the path of one {{kind}}.')\n"
                 '    else:\n'
                 '        try:\n'
                 '            from google.colab import files\n'
                 '        except ImportError:\n'
-                "            raise RuntimeError(f'BYOD is on but BYOD_PATH is empty, and the upload dialog exists only in Google Colab: copy the {{kind}} into this runtime (or attach it as a Kaggle dataset) and set BYOD_PATH.') from None\n"
-                '        uploaded = files.upload()\n'
+                "            raise BYODRefusal('(no file)', f'BYOD is on but BYOD_PATH is empty, and the upload dialog exists only in Google Colab: copy the {{kind}} into this runtime (or attach it as a Kaggle dataset) and set BYOD_PATH.') from None\n"
+                '        uploaded = files.upload() or {{}}\n'
                 '        if len(uploaded) != 1:\n'
-                "            raise ValueError(f'Upload exactly one {{kind}} (received {{len(uploaded)}} files; a cancelled dialog sends none). Run this cell again.')\n"
+                "            raise BYODRefusal('(no file)', f'Upload exactly one {{kind}} (received {{len(uploaded)}} files; a cancelled dialog sends none). Run this cell again.')\n"
                 '        name, payload = next(iter(uploaded.items()))\n'
                 "        source = Path('work') / Path(name).name\n"
                 '        source.parent.mkdir(parents=True, exist_ok=True)\n'
                 '        source.write_bytes(payload)\n'
                 "    if source.is_file() and not source.name.lower().endswith('.zip'):\n"
-                "        raise ValueError(f'{{source.name}}: expected a zip of images with a <stem>_mask.png each, or a directory.')\n"
-                '    return source\n'
-                '\n'
+                "        raise BYODRefusal(source.name, 'expected a zip of images with a <stem>_mask.png each, or a directory.')\n"
+                '    return source\n\n'
                 'if USE_BYOD:\n'
-                "    byod_path = byod_source(BYOD_PATH, 'zip (or directory) of images with a <stem>_mask.png each')\n"
-                '    records = load_byod_dataset(byod_path)\n'
-                '    splits = split_dataset(records, seed=SPLIT_SEED)\n'
-                "    print({{'byod_records': len(records), 'byod_split_sizes': check_split_sizes(splits), 'byod_minimum_images': byod_minimum_records()}})\n"
+                '    # DAT20: every problem with your input (path, upload, archive, images, masks, split, validation) stops here as one Refused: line.\n'
+                "    byod_name = (Path(str(BYOD_PATH).strip()).name or str(BYOD_PATH).strip()) if str(BYOD_PATH).strip() else '(no file)'\n"
+                '    try:\n'
+                "        byod_path = byod_source(BYOD_PATH, 'zip (or directory) of images with a <stem>_mask.png each')\n"
+                '        byod_name = byod_path.name or byod_name\n'
+                '        records = load_byod_dataset(byod_path)\n'
+                '        splits = split_dataset(records, seed=SPLIT_SEED)\n'
+                '        byod_split_sizes = check_split_sizes(splits)\n'
+                '    except BYODRefusal as exc:\n'
+                '        refuse_byod(exc.file_name, exc.reason)\n'
+                '    except (TypeError, ValueError, KeyError, OSError, zipfile.BadZipFile) as exc:\n'
+                '        refuse_byod(byod_name, exc)\n'
+                "    print({{'byod_records': len(records), 'byod_split_sizes': byod_split_sizes, 'byod_minimum_images': byod_minimum_records()}})\n"
                 "    data_source = 'BYOD (' + byod_path.name + ')'\n"
                 "    raw_rows = {{'byod': len(records)}}\n"
-                "else:\n"
-                "    t0 = time.perf_counter()\n"
+                'else:\n'
+                '    t0 = time.perf_counter()\n'
                 "    corpus_groups = fetch_corpus(cache_dir='weights/ade20k')\n"
-                "    corpus = read_corpus(corpus_groups)\n"
-                "    splits = build_sample_dataset(corpus, seed=SPLIT_SEED)\n"
+                '    corpus = read_corpus(corpus_groups)\n'
+                '    splits = build_sample_dataset(corpus, seed=SPLIT_SEED)\n'
                 "    data_source = f'{{CORPUS_NAME}}: {{CORPUS_REPO}}@{{CORPUS_REVISION[:12]}} ({{CORPUS_LICENSE}})'\n"
                 "    raw_rows = {{'rows': sum(len(v) for v in corpus_groups.values()), 'bytes': sum(len(r['image']) + len(r['annotation']) for v in corpus_groups.values() for r in v), 'targets': len(corpus), 'classes': len({{r['category'] for r in corpus}}), 'seconds': round(time.perf_counter() - t0, 1)}}\n"
-                "dataset_manifests = {{name: validate_dataset(part) for name, part in splits.items()}}\n"
-                "splits = {{name: manifest['records'] for name, manifest in dataset_manifests.items()}}\n"
-                "disjoint = check_split_disjoint(splits)\n"
+                'try:\n'
+                '    dataset_manifests = {{name: validate_dataset(part) for name, part in splits.items()}}\n'
+                "    splits = {{name: manifest['records'] for name, manifest in dataset_manifests.items()}}\n"
+                '    disjoint = check_split_disjoint(splits)\n'
+                'except (TypeError, ValueError, KeyError) as exc:\n'
+                '    if not USE_BYOD:\n'
+                '        raise  # the pinned sample failing its contract is a genuine error, not a refusal\n'
+                '    refuse_byod(byod_name, exc)\n'
                 "train_records, val_records, test_records = splits['train'], splits['validation'], splits['test']\n"
                 "write_dataset_csv(train_records, 'outputs/{stem}_train.csv')\n"
                 "print({{'data_source': data_source, 'raw_rows': raw_rows, 'splits': disjoint, 'target_rule': {{'component': 'largest 4-connected component of one class', 'area_fraction': [TARGET_MIN_FRACTION, TARGET_MAX_FRACTION], 'point': 'distance-transform maximum', 'box': 'tight bounds'}}}})\n"
@@ -601,7 +650,7 @@ TEMPLATE = {
         '- **"The isolated environment\'s Python process exited"** — usually out of memory; restart the session and choose **Run all**.\n'
         '- **Section 3 reports a size or SHA-256 mismatch, or cannot reach the Hub** — the message names the file. Delete the folder Section 3 prints as `weights_dir` and run Section 3 again (375 MB).\n'
         '- **Section 4 refuses a row group** — its decoded SHA-256 or byte total does not match `ROW_GROUP_PINS`: the cached parquet under `weights/ade20k/` is damaged (delete it) or the Hub served something else; nothing is fetched beyond the three pinned row groups.\n'
-        '- **Sections 6–8 are very slow** — the runtime has no GPU: the image encoder costs about 3 s per image on CPU and the default path encodes every image several times. Switch to a GPU runtime and Run all.\n'
+        '- **Sections 6–8 are very slow** — the runtime has no GPU: the image encoder took about 3.5 s per image on CPU in the workstation probe of the 2026-10-02 review, and the default path encodes every image several times. Switch to a GPU runtime and Run all.\n'
         '- **Where the environment lives** — Section 1 builds it in a folder named `dimer_isolated_env_<lock digest>` in the working directory. Set the environment variable `DIMER_ISOLATED_ENV` before Section 1 to build it somewhere else.\n'
         '- **The frozen or adapted numbers differ from the recorded ones in the second decimal** — not an error: one record per step at a small learning rate gives a noisy validation curve, and the recorded hosted runs themselves printed adapted point IoUs from 0.616 to 0.688. A verdict of `not above the centre-disk baseline` or `no gain` / `worse` is a finding to read, not an error.\n'
         '- **You re-ran Section 6 or 7 after training** — both restore the frozen decoder snapshot first, so the frozen numbers stay frozen and a second fine-tune starts from the pretrained decoder, never from the previous adaptation.\n'
