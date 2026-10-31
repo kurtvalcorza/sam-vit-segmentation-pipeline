@@ -241,16 +241,23 @@ TEMPLATE = {
                 '    return source\n\n'
                 'if USE_BYOD:\n'
                 '    # DAT20: every problem with your input (path, upload, archive, images, masks, split, validation) stops here as one Refused: line.\n'
+                '    # Caught: ValueError (load_byod_dataset, split_dataset and check_split_sizes raise it for bad input, undecodable images\n'
+                '    # included) and, only around load_byod_dataset, OSError (a file that cannot be read) and zipfile.BadZipFile (a corrupt\n'
+                '    # .zip). TypeError and KeyError are not caught: the loader always builds complete records, so either would be a bug\n'
+                '    # and keeps its traceback.\n'
                 "    byod_name = (Path(str(BYOD_PATH).strip()).name or str(BYOD_PATH).strip()) if str(BYOD_PATH).strip() else '(no file)'\n"
                 '    try:\n'
                 "        byod_path = byod_source(BYOD_PATH, 'zip (or directory) of images with a <stem>_mask.png each')\n"
                 '        byod_name = byod_path.name or byod_name\n'
-                '        records = load_byod_dataset(byod_path)\n'
+                '        try:\n'
+                '            records = load_byod_dataset(byod_path)\n'
+                '        except (OSError, zipfile.BadZipFile) as exc:\n'
+                "            raise BYODRefusal(byod_name, f'the dataset cannot be read ({{type(exc).__name__}}: {{exc}}); give a zip (or directory) of images with a <stem>_mask.png each') from None\n"
                 '        splits = split_dataset(records, seed=SPLIT_SEED)\n'
                 '        byod_split_sizes = check_split_sizes(splits)\n'
                 '    except BYODRefusal as exc:\n'
                 '        refuse_byod(exc.file_name, exc.reason)\n'
-                '    except (TypeError, ValueError, KeyError, OSError, zipfile.BadZipFile) as exc:\n'
+                '    except ValueError as exc:\n'
                 '        refuse_byod(byod_name, exc)\n'
                 "    print({{'byod_records': len(records), 'byod_split_sizes': byod_split_sizes, 'byod_minimum_images': byod_minimum_records()}})\n"
                 "    data_source = 'BYOD (' + byod_path.name + ')'\n"
@@ -266,7 +273,7 @@ TEMPLATE = {
                 '    dataset_manifests = {{name: validate_dataset(part) for name, part in splits.items()}}\n'
                 "    splits = {{name: manifest['records'] for name, manifest in dataset_manifests.items()}}\n"
                 '    disjoint = check_split_disjoint(splits)\n'
-                'except (TypeError, ValueError, KeyError) as exc:\n'
+                'except ValueError as exc:  # validate_dataset and check_split_disjoint raise it for bad input; anything else is a bug\n'
                 '    if not USE_BYOD:\n'
                 '        raise  # the pinned sample failing its contract is a genuine error, not a refusal\n'
                 '    refuse_byod(byod_name, exc)\n'
