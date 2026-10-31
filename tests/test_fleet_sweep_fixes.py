@@ -306,7 +306,7 @@ def test_swp_f_section_7_restores_the_frozen_decoder_before_training():
 
 def _byod_source(nb: dict):
     source = _cell(nb, "def byod_source(")
-    helper = source[source.index("def byod_source(") : source.index("if USE_BYOD:")]
+    helper = source[source.index("class BYODRefusal(ValueError):") : source.index("if USE_BYOD:")]
     ns = {"os": os, "Path": Path}
     exec(helper, ns)
     return ns["byod_source"]
@@ -320,14 +320,14 @@ def test_swp_b_byod_path_accepts_a_zip_or_directory_and_refusals_name_the_file(t
     folder = tmp_path / "masks"
     folder.mkdir()
     assert helper(str(folder), "zip") == folder
-    with pytest.raises(FileNotFoundError, match="missing.zip"):
+    with pytest.raises(ValueError, match="missing.zip"):  # DAT20: a BYODRefusal
         helper(str(tmp_path / "missing.zip"), "zip")
     bad = tmp_path / "wrong.tar"
     bad.write_bytes(b"x")
     with pytest.raises(ValueError, match=r"wrong.tar: expected a zip"):
         helper(str(bad), "zip")
     _no_colab(monkeypatch)
-    with pytest.raises(RuntimeError, match="only in Google Colab"):
+    with pytest.raises(ValueError, match="only in Google Colab"):  # DAT20: a BYODRefusal
         helper("", "zip")
 
 

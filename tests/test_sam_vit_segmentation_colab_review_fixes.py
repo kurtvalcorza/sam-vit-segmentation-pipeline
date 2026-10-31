@@ -188,7 +188,7 @@ def test_m3_cpu_time_is_an_estimate_and_a_gpu_is_recommended():
     markdown = _markdown(_nb())
     assert "an hour or more" not in markdown
     assert "Choose a GPU runtime (Colab T4)" in markdown or "Choose a **GPU** runtime" in markdown
-    assert "*estimated* (not measured on a hosted CPU)" in markdown
+    assert "(an extrapolation from that probe; a 2-vCPU hosted runtime is slower)" in markdown  # tier C: a labelled record, no run-status qualifier
     assert "(an estimate, see Prerequisites)" in markdown
 
 
