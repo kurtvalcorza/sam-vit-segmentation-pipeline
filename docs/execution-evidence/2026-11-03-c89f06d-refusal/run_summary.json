@@ -1,0 +1,71 @@
+{
+  "repo": "sam-vit-segmentation-pipeline",
+  "sha": "c89f06d5bb08dbc9a662da221570bd3740c721c6",
+  "notebook": "tutorials/sam_vit_segmentation_colab.ipynb",
+  "blob": "1e68a11c654c9c30188a2bdbaccdcdd8ab9acea9",
+  "gpu": "T4",
+  "session": "suite-sam-c89f06d-3c7f",
+  "started_utc": "2026-11-03T07:31:05+00:00",
+  "runner": "Colab CLI `colab exec -f` on a fresh session (not a browser Run all)",
+  "overrides": [
+    {
+      "name": "USE_BYOD",
+      "from": "False",
+      "to": "True"
+    },
+    {
+      "name": "BYOD_PATH",
+      "from": "''",
+      "to": "'/content/sample_data'"
+    }
+  ],
+  "run_copy_blob": "6e3a04fd37bcb81cb5734c04a8a57ecae033bfbf",
+  "run_copy_sha256": "a52381089caf26287c8bc04a1d227ea4f3709e0fd9b72941d1c1263c5d89b6c9",
+  "run_copy_note": "refusal run: the run copy is the committed notebook with the listed assignment overrides, cut immediately after the refusal cell and re-serialised (nbformat layout); input_unchanged compares against that copy",
+  "truncated_after_cell": "sam_vit_segmentation-16",
+  "refusal_cell_ref": "sam_vit_segmentation-16",
+  "refusal_cell_index": 7,
+  "cells_dropped": 17,
+  "code_cells_dropped": 5,
+  "original_sha256": "87f9699f39ca62e7c5c6281b9027ddaea97b93b2668b2cd67c323f8ed30eb5a1",
+  "status": "[suite-sam-c89f06d-3c7f] gpu-t4-s-ass1b0-365934vjsopfi | Hardware: T4 | Shape: Standard | Variant: GPU | Status: IDLE",
+  "exec_exit_code": 0,
+  "stopped": true,
+  "stop_verified": true,
+  "wall_s": 105.3,
+  "input_unchanged": true,
+  "executed_file": "sam_vit_segmentation_colab_c89f06d_colab-cli-t4_output.ipynb",
+  "log_cells": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+  ],
+  "log_total": 7,
+  "code_cells": 7,
+  "executed_cells": 4,
+  "errors": [
+    {
+      "cell": "sam_vit_segmentation-16",
+      "ename": "IsolatedCellRefusal",
+      "evalue": "sample_data: BYOD image README.md has no README_mask.* file; fix the input and run this cell again (the earlier results of this session were removed)."
+    }
+  ],
+  "execution_counts": [],
+  "sequential": null,
+  "executed_sha256": "cbf5f317d48d92669d02eddb63fb2ce67a0c2269382d5e6f0ff2e2dd898e2e5d",
+  "log_sequential_complete": true,
+  "mode": "expect_refusal",
+  "refusal_line": "Refused: sample_data: BYOD image README.md has no README_mask.* file; fix the input and run this cell again (the earlier results of this session were removed).",
+  "halting_cell_index": 7,
+  "halting_cell_id": "sam_vit_segmentation-16",
+  "error_cells": [
+    7
+  ],
+  "refusal_fail_reasons": [],
+  "refusal_ok": true,
+  "verdict": "PASS"
+}
